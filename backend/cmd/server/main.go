@@ -98,6 +98,12 @@ func main() {
 	settingsGroup.GET("", settingsHandler.Get)
 	settingsGroup.PUT("", settingsHandler.Update)
 
+	// RunningHub
+	runningHubHandler := handler.NewRunningHubHandler(db, aesCrypto)
+	runningHubGroup := api.Group("/runninghub", middleware.AuthRequired(jwtMgr))
+	runningHubGroup.GET("/config", runningHubHandler.GetConfig)
+	runningHubGroup.PUT("/config", runningHubHandler.UpdateConfig)
+
 	// Files
 	fileHandler := handler.NewFileHandler(fileStore, cfg.Storage.MaxFileSizeMB)
 	fileGroup := api.Group("/files")

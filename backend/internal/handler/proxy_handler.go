@@ -47,10 +47,10 @@ func (h *ProxyHandler) WebDAVProxy(c *gin.Context) {
 
 	proxyHeaders := map[string]string{
 		"x-webdav-authorization": "Authorization",
-		"x-webdav-depth":        "Depth",
-		"x-webdav-destination":  "Destination",
-		"x-webdav-overwrite":    "Overwrite",
-		"x-webdav-content-type": "Content-Type",
+		"x-webdav-depth":         "Depth",
+		"x-webdav-destination":   "Destination",
+		"x-webdav-overwrite":     "Overwrite",
+		"x-webdav-content-type":  "Content-Type",
 	}
 	for from, to := range proxyHeaders {
 		if v := c.GetHeader(from); v != "" {
@@ -220,7 +220,7 @@ func loadAllPrompts() []promptItem {
 			Tags:      tags,
 			Category:  "gpt-image-2-prompts",
 			GithubURL: "https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts",
-			Preview:   fmt.Sprintf("![](%%s)", image),
+			Preview:   fmt.Sprintf("![](%s)", image),
 			CreatedAt: record.AddedAt,
 			UpdatedAt: record.AddedAt,
 		})

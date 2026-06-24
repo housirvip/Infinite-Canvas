@@ -100,15 +100,15 @@ func (s *Scheduler) CreateTask(userID uint, taskType model.TaskType, providerNam
 	taskID, _ := gonanoid.New(21)
 
 	task := &model.Task{
-		TaskID:   taskID,
-		UserID:   userID,
-		Type:     taskType,
-		Provider: providerName,
-		Status:   model.TaskStatusPending,
+		TaskID:    taskID,
+		UserID:    userID,
+		Type:      taskType,
+		Provider:  providerName,
+		Status:    model.TaskStatusPending,
 		ChannelID: channelID,
-		Model:    modelName,
-		Prompt:   prompt,
-		Params:   params,
+		Model:     modelName,
+		Prompt:    prompt,
+		Params:    params,
 	}
 
 	if err := s.db.Create(task).Error; err != nil {
@@ -271,18 +271,19 @@ func (s *Scheduler) failTask(task *model.Task, errMsg string) {
 
 func (s *Scheduler) resolveChannel(task *model.Task) (apiKey, baseURL string, err error) {
 	if task.Provider == "runninghub" {
-		var settings model.UserSettings
-		if err := s.db.Where("user_id = ?", task.UserID).First(&settings).Error; err != nil {
+		var config model.RunningHubConfig
+		if err := s.db.Where("user_id = ?", task.UserID).First(&config).Error; err != nil {
 			return "", "", fmt.Errorf("no RunningHub API key configured")
 		}
-		var m map[string]any
-		if json.Unmarshal([]byte(settings.Settings), &m) != nil {
+		if config.EncryptedAPIKey == "" {
 			return "", "", fmt.Errorf("no RunningHub API key configured")
 		}
-		key, _ := m["runninghubApiKey"].(string)
-		if key == "" {
+
+		key, err := s.aesCrypto.Decrypt(config.EncryptedAPIKey)
+		if err != nil || key == "" {
 			return "", "", fmt.Errorf("no RunningHub API key configured")
 		}
+
 		return key, "", nil
 	}
 

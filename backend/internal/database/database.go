@@ -46,6 +46,7 @@ func Open(cfg *config.DatabaseConfig, logLevel string) (*gorm.DB, error) {
 		&model.Task{},
 		&model.AuditLog{},
 		&model.UserSettings{},
+		&model.RunningHubConfig{},
 		&model.CanvasProject{},
 		&model.Asset{},
 	); err != nil {

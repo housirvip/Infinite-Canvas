@@ -9,6 +9,7 @@ import { getAntThemeConfig } from "@/lib/app-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useConfigStore } from "@/stores/use-config-store";
+import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { backendWs } from "@/services/backend-ws";
 
 const queryClient = new QueryClient({
@@ -26,6 +27,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     const dark = theme === "dark";
     const user = useUserStore((state) => state.user);
     const fetchConfigFromServer = useConfigStore((state) => state.fetchConfigFromServer);
+    const fetchRunningHubConfigFromServer = useRunningHubStore((state) => state.fetchConfigFromServer);
 
     useEffect(() => {
         document.documentElement.classList.toggle("dark", dark);
@@ -35,12 +37,12 @@ export function AppProviders({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (user) {
             backendWs.connect();
-            fetchConfigFromServer();
+            void Promise.all([fetchConfigFromServer(), fetchRunningHubConfigFromServer()]);
         } else {
             backendWs.disconnect();
         }
         return () => backendWs.disconnect();
-    }, [user, fetchConfigFromServer]);
+    }, [user, fetchConfigFromServer, fetchRunningHubConfigFromServer]);
 
     return (
         <ConfigProvider locale={zhCN} theme={getAntThemeConfig(dark)}>

@@ -3,7 +3,6 @@ import { CircleAlert, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
-import { RunningHubConfigTab } from "@/components/layout/runninghub-workflow-editor";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionLabel, modelOptionsFromChannels, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import * as channelApi from "@/services/backend-channel";
@@ -358,11 +357,6 @@ export function AppConfigModal() {
                                 </Form.Item>
                             </Form>
                         ),
-                    },
-                    {
-                        key: "runninghub",
-                        label: "RunningHub",
-                        children: <RunningHubConfigTab config={config} onConfigChange={(key, value) => updateConfigAndSync(key, value)} />,
                     },
                 ]}
             />

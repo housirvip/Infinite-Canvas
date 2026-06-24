@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { Button, InputNumber, Modal } from "antd";
 import { Grid2x2 } from "lucide-react";

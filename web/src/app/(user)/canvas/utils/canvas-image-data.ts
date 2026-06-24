@@ -1,5 +1,3 @@
-"use client";
-
 export type ImageCropRect = {
     x: number;
     y: number;

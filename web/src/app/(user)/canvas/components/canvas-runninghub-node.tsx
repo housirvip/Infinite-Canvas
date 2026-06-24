@@ -1,5 +1,3 @@
-"use client";
-
 import { Workflow, LoaderCircle, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 
 import { useConfigStore } from "@/stores/use-config-store";

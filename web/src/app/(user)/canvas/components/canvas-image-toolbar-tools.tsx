@@ -1,5 +1,3 @@
-"use client";
-
 import type { ReactNode } from "react";
 import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
 

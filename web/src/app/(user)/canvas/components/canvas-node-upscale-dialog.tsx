@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { Button, Modal, Segmented } from "antd";
 import { ImagePlus } from "lucide-react";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Button, Tooltip } from "antd";
 import { BookOpen } from "lucide-react";

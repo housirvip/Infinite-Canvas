@@ -1,5 +1,3 @@
-"use client";
-
 export function fitNodeSize(width: number, height: number, maxWidth = 640, maxHeight = 640) {
     const w = Math.max(1, width);
     const h = Math.max(1, height);

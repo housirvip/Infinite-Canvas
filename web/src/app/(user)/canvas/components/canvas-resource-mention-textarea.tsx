@@ -1,5 +1,3 @@
-"use client";
-
 import { forwardRef, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent, TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";

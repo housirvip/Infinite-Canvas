@@ -1,5 +1,3 @@
-"use client";
-
 import { Button, Modal } from "antd";
 
 import { useAssetStore } from "@/stores/use-asset-store";

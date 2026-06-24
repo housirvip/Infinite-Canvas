@@ -1,5 +1,3 @@
-"use client";
-
 import { App, Button, Input, InputNumber, Select, Switch } from "antd";
 import { LoaderCircle, Play, RefreshCw, Square } from "lucide-react";
 

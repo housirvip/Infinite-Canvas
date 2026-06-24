@@ -14,8 +14,9 @@ import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } f
 import { useThemeStore } from "@/stores/use-theme-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
-import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { submitImageGeneration, submitImageEdit, fileUrl } from "@/services/backend-task";
+import { backendWs } from "@/services/backend-ws";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
 
@@ -283,11 +284,25 @@ export default function ImagePage() {
     const runGenerationSlot = async (index: number, snapshot: { text: string; config: AiConfig; references: ReferenceImage[] }) => {
         const itemStartedAt = performance.now();
         try {
-            const result = snapshot.references.length ? await requestEdit(snapshot.config, snapshot.text, snapshot.references) : await requestGeneration(snapshot.config, snapshot.text);
-            const image = result[0];
-            if (!image) throw new Error("接口没有返回图片");
-            const meta = await readImageMeta(image.dataUrl);
-            const nextImage = { id: image.id, dataUrl: image.dataUrl, durationMs: performance.now() - itemStartedAt, width: meta.width, height: meta.height, bytes: getDataUrlByteSize(image.dataUrl) };
+            const modelName = snapshot.config.model.includes("::") ? snapshot.config.model.split("::").pop()! : snapshot.config.model;
+            const channelId = snapshot.config.channels.find((ch) => snapshot.config.model.startsWith(ch.id + "::"))?.id;
+            const serverChannelId = channelId ? useConfigStore.getState().getServerChannelId(channelId) : undefined;
+            const refFileIds = snapshot.references.map((r) => r.storageKey).filter((k): k is string => Boolean(k));
+            const task = snapshot.references.length
+                ? await submitImageEdit({ channelId: serverChannelId, model: modelName, prompt: snapshot.text, n: 1, quality: snapshot.config.quality, size: snapshot.config.size, refFileIds })
+                : await submitImageGeneration({ channelId: serverChannelId, model: modelName, prompt: snapshot.text, n: 1, quality: snapshot.config.quality, size: snapshot.config.size });
+            const taskResult = await new Promise<{ files: Array<{ fileId: string; url: string; mimeType: string; size: number }> }>((resolve, reject) => {
+                const unsub = backendWs.onTask(task.taskId, (msg) => {
+                    if (msg.type === "task.status") return;
+                    unsub();
+                    if (msg.type === "task.completed" && msg.result) resolve({ files: msg.result.files || [] });
+                    else reject(new Error(msg.error || "生成失败"));
+                });
+            });
+            const file = taskResult.files[0];
+            if (!file) throw new Error("接口没有返回图片");
+            const url = fileUrl(file.fileId);
+            const nextImage = { id: nanoid(), dataUrl: url, durationMs: performance.now() - itemStartedAt, width: 0, height: 0, bytes: file.size };
             setResults((value) => updateResultAt(value, index, { status: "success", image: nextImage }));
             return nextImage;
         } catch (error) {

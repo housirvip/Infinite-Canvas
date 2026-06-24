@@ -15,6 +15,8 @@ import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceRefe
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
+import { submitVideoGeneration, fileUrl } from "@/services/backend-task";
+import { backendWs } from "@/services/backend-ws";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -174,10 +176,42 @@ export default function VideoPage() {
         const batchStartedAt = performance.now();
         setStartedAt(batchStartedAt);
         try {
-            const task = await createVideoGenerationTask(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences);
-            const log = buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, videoReferences: snapshot.videoReferences, audioReferences: snapshot.audioReferences, durationMs: 0, status: "生成中", task });
-            await saveLog(log);
-            void pollGenerationLog(log, snapshot.config);
+            const modelName = snapshot.config.model.includes("::") ? snapshot.config.model.split("::").pop()! : snapshot.config.model;
+            const channelId = snapshot.config.channels.find((ch) => snapshot.config.model.startsWith(ch.id + "::"))?.id;
+            const serverChannelId = channelId ? useConfigStore.getState().getServerChannelId(channelId) : undefined;
+            const refFileIds = [...snapshot.references, ...snapshot.videoReferences].map((r) => r.storageKey).filter((k): k is string => Boolean(k));
+            const task = await submitVideoGeneration({
+                channelId: serverChannelId,
+                model: modelName,
+                prompt: snapshot.text,
+                refFileIds: refFileIds.length ? refFileIds : undefined,
+                seconds: Number(snapshot.config.videoSeconds) || 6,
+                quality: snapshot.config.vquality,
+                generateAudio: snapshot.config.videoGenerateAudio === "true",
+                watermark: snapshot.config.videoWatermark === "true",
+            });
+            setResults([{ id: nanoid(), status: "pending" }]);
+            const unsub = backendWs.onTask(task.taskId, (msg) => {
+                if (msg.type === "task.status") {
+                    setResults((prev) => prev.map((r) => r.status === "pending" ? { ...r, status: "pending" } : r));
+                }
+                if (msg.type === "task.completed" && msg.result) {
+                    unsub();
+                    const file = msg.result.files?.[0];
+                    if (file) {
+                        const nextVideo: GeneratedVideo = { id: nanoid(), url: fileUrl(file.fileId), storageKey: file.fileId, durationMs: performance.now() - batchStartedAt, width: 1280, height: 720, bytes: file.size, mimeType: file.mimeType };
+                        setResults([{ id: nextVideo.id, status: "success", video: nextVideo }]);
+                        message.success("视频已生成");
+                    }
+                    setRunning(false);
+                }
+                if (msg.type === "task.failed") {
+                    unsub();
+                    setResults([{ id: nanoid(), status: "failed", error: msg.error || "生成失败" }]);
+                    message.error(msg.error || "生成失败");
+                    setRunning(false);
+                }
+            });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "生成失败";
             setResults([{ id: nanoid(), status: "failed", error: errorMessage }]);

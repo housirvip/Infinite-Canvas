@@ -1,5 +1,3 @@
-"use client";
-
 import localforage from "localforage";
 
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";

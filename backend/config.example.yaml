@@ -1,0 +1,36 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  cors:
+    allowOrigins:
+      - "http://localhost:3000"
+      - "http://localhost:3030"
+
+database:
+  driver: "sqlite"              # "sqlite" or "mysql"
+  dsn: "data/canvas.db"         # SQLite file path, or MySQL DSN like "user:pass@tcp(127.0.0.1:3306)/dbname?parseTime=true"
+
+auth:
+  jwtSecret: "${JWT_SECRET}"    # required: random 32+ char string
+  accessTokenTTL: "24h"
+  refreshTokenTTL: "168h"
+
+encryption:
+  masterKey: "${ENCRYPTION_MASTER_KEY}"  # required: 64-char hex string (32 bytes)
+
+storage:
+  type: "local"
+  localDir: "data/files"
+  maxFileSizeMB: 200
+
+scheduler:
+  concurrency:
+    openai_image: 3
+    openai_video: 3
+    seedance: 3
+    runninghub: 3
+    audio: 5
+  queueSize: 100
+
+log:
+  level: "info"

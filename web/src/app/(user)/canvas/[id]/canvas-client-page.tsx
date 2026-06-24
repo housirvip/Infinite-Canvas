@@ -2786,7 +2786,7 @@ function InfiniteCanvasPage() {
                                             .filter((c) => c.toNodeId === panelNode.id)
                                             .map((c) => nodesRef.current.find((n) => n.id === c.fromNodeId))
                                             .filter(Boolean)
-                                            .map((n) => ({ id: n!.id, title: n!.title, type: n!.type }))}
+                                            .map((n) => ({ id: n!.id, title: n!.title, type: n!.type, content: n!.metadata?.content }))}
                                         onParamChange={handleRunningHubParamChange}
                                         onConfigChange={handleConfigNodeChange}
                                         onExecute={handleRunningHubExecute}

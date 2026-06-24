@@ -9,7 +9,7 @@ import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata } from "../types";
 
-export type UpstreamNode = { id: string; title: string; type: CanvasNodeType };
+export type UpstreamNode = { id: string; title: string; type: CanvasNodeType; content?: string };
 
 function upstreamLabel(node: UpstreamNode, index: number): string {
     if (node.type === CanvasNodeType.Text) return `文本${index + 1}`;
@@ -131,9 +131,17 @@ export function CanvasRunningHubPanel({ node, isRunning, hasTaskId, upstreamNode
                                         className="rounded-md border px-2 py-1.5 text-xs opacity-60"
                                         style={{ background: theme.node.fill, borderColor: theme.node.stroke }}
                                     >
-                                        来自: {(() => {
+                                        {(() => {
                                             const idx = upstreamTextNodes.findIndex((n) => n.id === selectedSource);
-                                            return idx >= 0 ? upstreamLabel(upstreamTextNodes[idx], idx) : "文本节点";
+                                            const label = idx >= 0 ? upstreamLabel(upstreamTextNodes[idx], idx) : "文本节点";
+                                            const content = idx >= 0 ? upstreamTextNodes[idx].content : undefined;
+                                            const maxLen = 80;
+                                            const preview = content ? (content.length > maxLen ? content.slice(0, maxLen) + "..." : content) : undefined;
+                                            return preview ? (
+                                                <span className="line-clamp-2" title={content}>{preview}</span>
+                                            ) : (
+                                                <span>来自: {label}</span>
+                                            );
                                         })()}
                                     </div>
                                 ) : (

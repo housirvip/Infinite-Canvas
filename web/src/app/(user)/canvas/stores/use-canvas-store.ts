@@ -21,6 +21,8 @@ export type CanvasProject = {
     viewport: ViewportTransform;
 };
 
+type CanvasProjectPatch = Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>;
+
 type CanvasStore = {
     hydrated: boolean;
     projects: CanvasProject[];
@@ -30,7 +32,8 @@ type CanvasStore = {
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
     replaceProjects: (projects: CanvasProject[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
+    updateProject: (id: string, patch: CanvasProjectPatch) => void;
+    saveProjectNow: (id: string, patch: CanvasProjectPatch) => Promise<void>;
     fetchProjects: () => Promise<void>;
     fetchProject: (id: string) => Promise<CanvasProject | null>;
 };
@@ -39,6 +42,22 @@ const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSaves = new Map<string, Record<string, any>>();
+
+function buildProjectSavePatch(patch: CanvasProjectPatch): Record<string, any> {
+    const savePatch: Record<string, any> = {};
+    if (patch.nodes !== undefined) savePatch.nodes = patch.nodes;
+    if (patch.connections !== undefined) savePatch.connections = patch.connections;
+    if (patch.chatSessions !== undefined) savePatch.chatSessions = patch.chatSessions;
+    if (patch.activeChatId !== undefined) savePatch.activeChatId = patch.activeChatId;
+    if (patch.backgroundMode !== undefined) savePatch.backgroundMode = patch.backgroundMode;
+    if (patch.showImageInfo !== undefined) savePatch.showImageInfo = patch.showImageInfo;
+    if (patch.viewport !== undefined) {
+        savePatch.viewportX = patch.viewport.x;
+        savePatch.viewportY = patch.viewport.y;
+        savePatch.viewportK = patch.viewport.k;
+    }
+    return savePatch;
+}
 
 function debouncedSave(projectId: string, patch: Record<string, any>) {
     const existing = pendingSaves.get(projectId) || {};
@@ -194,18 +213,19 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
         set((state) => ({
             projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
         }));
-        const savePatch: Record<string, any> = {};
-        if (patch.nodes) savePatch.nodes = patch.nodes;
-        if (patch.connections) savePatch.connections = patch.connections;
-        if (patch.chatSessions) savePatch.chatSessions = patch.chatSessions;
-        if (patch.activeChatId !== undefined) savePatch.activeChatId = patch.activeChatId;
-        if (patch.backgroundMode) savePatch.backgroundMode = patch.backgroundMode;
-        if (patch.showImageInfo !== undefined) savePatch.showImageInfo = patch.showImageInfo;
-        if (patch.viewport) {
-            savePatch.viewportX = patch.viewport.x;
-            savePatch.viewportY = patch.viewport.y;
-            savePatch.viewportK = patch.viewport.k;
+        debouncedSave(id, buildProjectSavePatch(patch));
+    },
+
+    saveProjectNow: async (id, patch) => {
+        set((state) => ({
+            projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
+        }));
+        const pendingPatch = pendingSaves.get(id) || {};
+        pendingSaves.delete(id);
+        if (!pendingSaves.size && saveTimer) {
+            clearTimeout(saveTimer);
+            saveTimer = null;
         }
-        debouncedSave(id, savePatch);
+        await projectApi.updateProject(id, { ...pendingPatch, ...buildProjectSavePatch(patch) });
     },
 }));

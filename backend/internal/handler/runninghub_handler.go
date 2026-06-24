@@ -23,13 +23,14 @@ func NewRunningHubHandler(db *gorm.DB, aesCrypto *crypto.AESCrypto) *RunningHubH
 }
 
 type RunningHubParamPayload struct {
-	NodeID       string `json:"nodeId"`
-	FieldName    string `json:"fieldName"`
-	Role         string `json:"role"`
-	Label        string `json:"label"`
-	DefaultValue string `json:"defaultValue,omitempty"`
-	Description  string `json:"description,omitempty"`
-	Order        int    `json:"order"`
+	NodeID       string   `json:"nodeId"`
+	FieldName    string   `json:"fieldName"`
+	Role         string   `json:"role"`
+	Label        string   `json:"label"`
+	DefaultValue string   `json:"defaultValue,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Order        int      `json:"order"`
+	EnumOptions  []string `json:"enumOptions,omitempty"`
 }
 
 type RunningHubWorkflowPayload struct {

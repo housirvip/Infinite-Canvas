@@ -277,6 +277,7 @@ function WorkflowEditorModal({ workflow, onSave, onCancel }: { workflow: Running
             label: row.label,
             defaultValue: row.role === "fixed" || row.role === "boolean" || row.role === "number" || row.role === "string" ? row.fieldValue : undefined,
             description: row.description,
+            enumOptions: row.enumOptions?.length ? row.enumOptions : undefined,
             order: index,
         }));
         update("params", params);
@@ -371,7 +372,16 @@ function WorkflowEditorModal({ workflow, onSave, onCancel }: { workflow: Running
                                 <Input size="small" value={param.fieldName} placeholder="field" className="!w-20" onChange={(event) => updateParam(index, { fieldName: event.target.value })} />
                                 <Select size="small" className="!w-24" value={param.role} options={PARAM_ROLE_OPTIONS} onChange={(value) => updateParam(index, { role: value })} />
                                 <Input size="small" value={param.label} placeholder="标签" className="!w-24" onChange={(event) => updateParam(index, { label: event.target.value })} />
-                                {param.role === "fixed" || param.role === "boolean" || param.role === "number" || param.role === "string" ? (
+                                {param.role === "string" && param.enumOptions?.length ? (
+                                    <Select
+                                        size="small"
+                                        className="min-w-0 flex-1"
+                                        value={param.defaultValue}
+                                        placeholder="默认值"
+                                        options={param.enumOptions.map((option) => ({ label: option, value: option }))}
+                                        onChange={(value) => updateParam(index, { defaultValue: value })}
+                                    />
+                                ) : param.role === "fixed" || param.role === "boolean" || param.role === "number" || param.role === "string" ? (
                                     <Input size="small" value={param.defaultValue} placeholder="默认值" className="min-w-0 flex-1" onChange={(event) => updateParam(index, { defaultValue: event.target.value })} />
                                 ) : (
                                     <div className="min-w-0 flex-1" />

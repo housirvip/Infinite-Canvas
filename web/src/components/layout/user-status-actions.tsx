@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { BookOpen, Keyboard, Settings2, Workflow } from "lucide-react";
+import { BookOpen, Keyboard, Settings2 } from "lucide-react";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { GitHubLink } from "@/components/layout/github-link";
@@ -40,7 +40,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 </button>
             ) : null}
             <button type="button" className={naturalIconClass} style={iconStyle} onClick={openRunningHubDialog} aria-label="RunningHub" title="RunningHub">
-                <Workflow className="size-4" />
+                <span className="text-sm font-semibold leading-none" aria-hidden="true">R</span>
             </button>
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
             <VersionReleaseModal style={versionStyle} />

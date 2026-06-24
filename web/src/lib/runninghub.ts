@@ -11,6 +11,7 @@ export type RunningHubParam = {
     label: string;
     defaultValue?: string;
     description?: string;
+    enumOptions?: string[];
     order: number;
 };
 
@@ -42,6 +43,7 @@ export type RunningHubNodeInfo = {
     nodeId: string;
     fieldName: string;
     fieldValue: string;
+    fieldData?: string;
     description?: string;
 };
 
@@ -156,7 +158,9 @@ export type ParsedCurlNode = {
     nodeId: string;
     fieldName: string;
     fieldValue: string;
+    fieldData?: string;
     description?: string;
+    enumOptions?: string[];
 };
 
 export type ParsedCurlResult = {
@@ -164,6 +168,19 @@ export type ParsedCurlResult = {
     instanceType: "default" | "plus";
     rawNodes: ParsedCurlNode[];
 };
+
+export function parseRunningHubEnumOptions(fieldData?: string): string[] {
+    if (!fieldData) return [];
+
+    try {
+        const parsed = JSON.parse(fieldData);
+        if (!Array.isArray(parsed) || !Array.isArray(parsed[0])) return [];
+
+        return parsed[0].filter((option): option is string => typeof option === "string" && option.length > 0);
+    } catch {
+        return [];
+    }
+}
 
 export function parseCurlCommand(curl: string): ParsedCurlResult | null {
     const workflowIdMatch = curl.match(/\/run\/ai-app\/(\d+)/);
@@ -196,7 +213,9 @@ export function parseCurlCommand(curl: string): ParsedCurlResult | null {
         nodeId: n.nodeId,
         fieldName: n.fieldName,
         fieldValue: n.fieldValue || "",
+        fieldData: n.fieldData,
         description: n.description,
+        enumOptions: parseRunningHubEnumOptions(n.fieldData),
     }));
     const instanceType = body.instanceType === "plus" ? ("plus" as const) : ("default" as const);
 
@@ -209,6 +228,7 @@ export function suggestParamRole(node: ParsedCurlNode): RunningHubParamRole {
     if (field === "text" || field === "prompt" || desc.includes("提示词") || desc.includes("prompt")) return "prompt";
     if (field === "image" || desc.includes("图像") || desc.includes("图片") || desc.includes("upload") || desc.includes("上传")) return "image";
     if (field === "video" || desc.includes("视频") || desc.includes("video")) return "video";
+    if (node.enumOptions?.length) return "string";
     if (node.fieldValue === "true" || node.fieldValue === "false") return "boolean";
     if (node.fieldValue && !isNaN(Number(node.fieldValue))) return "number";
     return "fixed";

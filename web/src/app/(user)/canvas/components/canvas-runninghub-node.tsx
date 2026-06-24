@@ -1,4 +1,4 @@
-import { Workflow, LoaderCircle, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { LoaderCircle, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 
 import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -15,7 +15,7 @@ export function RunningHubNodeContent({ node, theme }: { node: CanvasNodeData; t
             {/* Header */}
             <div className="flex items-center gap-2">
                 <div className="flex size-8 items-center justify-center rounded-lg" style={{ background: "#6366f1", color: "#fff" }}>
-                    <Workflow className="size-4" />
+                    <span className="text-sm font-semibold leading-none" aria-hidden="true">R</span>
                 </div>
                 <span className="text-sm font-semibold">RunningHub</span>
             </div>

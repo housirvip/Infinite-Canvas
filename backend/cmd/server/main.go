@@ -90,6 +90,13 @@ func main() {
 	channelGroup.POST("", channelHandler.Create)
 	channelGroup.PUT("/:id", channelHandler.Update)
 	channelGroup.DELETE("/:id", channelHandler.Delete)
+	channelGroup.GET("/:id/models", channelHandler.ListModels)
+
+	// Settings
+	settingsHandler := handler.NewSettingsHandler(db)
+	settingsGroup := api.Group("/settings", middleware.AuthRequired(jwtMgr))
+	settingsGroup.GET("", settingsHandler.Get)
+	settingsGroup.PUT("", settingsHandler.Update)
 
 	// Files
 	fileHandler := handler.NewFileHandler(fileStore, cfg.Storage.MaxFileSizeMB)
@@ -104,6 +111,28 @@ func main() {
 	taskGroup.GET("", taskHandler.List)
 	taskGroup.GET("/:taskId", taskHandler.Get)
 	taskGroup.POST("/:taskId/cancel", taskHandler.Cancel)
+
+	// Projects
+	projectHandler := handler.NewCanvasProjectHandler(db)
+	projectGroup := api.Group("/projects", middleware.AuthRequired(jwtMgr))
+	projectGroup.GET("", projectHandler.List)
+	projectGroup.POST("", projectHandler.Create)
+	projectGroup.GET("/:projectId", projectHandler.Get)
+	projectGroup.PUT("/:projectId", projectHandler.Update)
+	projectGroup.DELETE("/:projectId", projectHandler.Delete)
+
+	// Assets
+	assetHandler := handler.NewAssetHandler(db)
+	assetGroup := api.Group("/assets", middleware.AuthRequired(jwtMgr))
+	assetGroup.GET("", assetHandler.List)
+	assetGroup.POST("", assetHandler.Create)
+	assetGroup.GET("/:assetId", assetHandler.Get)
+	assetGroup.PUT("/:assetId", assetHandler.Update)
+	assetGroup.DELETE("/:assetId", assetHandler.Delete)
+
+	// Chat (SSE streaming proxy)
+	chatHandler := handler.NewChatHandler(db, aesCrypto)
+	api.POST("/chat/stream", middleware.AuthRequired(jwtMgr), chatHandler.Stream)
 
 	// WebSocket
 	wsHandler := handler.NewWSHandler(hub, jwtMgr)

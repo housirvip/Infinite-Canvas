@@ -104,7 +104,9 @@ func (h *Hub) Run() {
 				h.clients[client.userID] = make(map[*Client]struct{})
 			}
 			h.clients[client.userID][client] = struct{}{}
+			count := len(h.clients[client.userID])
 			h.mu.Unlock()
+			log.Printf("ws: registered client (user=%d, total=%d)", client.userID, count)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -116,6 +118,7 @@ func (h *Hub) Run() {
 				}
 			}
 			h.mu.Unlock()
+			log.Printf("ws: unregistered client (user=%d)", client.userID)
 		}
 	}
 }

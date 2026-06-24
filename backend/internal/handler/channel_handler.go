@@ -2,8 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/infinite-canvas/backend/internal/crypto"
@@ -23,9 +26,9 @@ func NewChannelHandler(db *gorm.DB, aesCrypto *crypto.AESCrypto) *ChannelHandler
 
 type CreateChannelRequest struct {
 	Name           string   `json:"name" binding:"required"`
-	Provider       string   `json:"provider" binding:"required"`
+	Provider       string   `json:"provider"`
 	BaseURL        string   `json:"baseUrl" binding:"required"`
-	APIKey         string   `json:"apiKey" binding:"required"`
+	APIKey         string   `json:"apiKey"`
 	APIFormat      string   `json:"apiFormat"`
 	Models         []string `json:"models"`
 	MaxConcurrency int      `json:"maxConcurrency"`
@@ -75,15 +78,24 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 
 	userID := middleware.GetUserID(c)
 
-	encrypted, err := h.crypto.Encrypt(req.APIKey)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encrypt API key"})
-		return
+	var encrypted string
+	if req.APIKey != "" {
+		var err error
+		encrypted, err = h.crypto.Encrypt(req.APIKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encrypt API key"})
+			return
+		}
 	}
 
 	apiFormat := req.APIFormat
 	if apiFormat == "" {
-		apiFormat = "openai"
+		apiFormat = "openai-response"
+	}
+
+	provider := req.Provider
+	if provider == "" {
+		provider = apiFormat
 	}
 
 	maxConcurrency := req.MaxConcurrency
@@ -96,7 +108,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 	channel := model.ApiChannel{
 		UserID:          userID,
 		Name:            req.Name,
-		Provider:        req.Provider,
+		Provider:        provider,
 		BaseURL:         req.BaseURL,
 		EncryptedAPIKey: encrypted,
 		APIFormat:       apiFormat,
@@ -198,4 +210,96 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "channel deleted"})
+}
+
+func (h *ChannelHandler) ListModels(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel id"})
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+
+	var channel model.ApiChannel
+	if err := h.db.Where("id = ? AND user_id = ?", id, userID).First(&channel).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
+		return
+	}
+
+	apiKey, err := h.crypto.Decrypt(channel.EncryptedAPIKey)
+	if err != nil || apiKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "channel has no API key configured"})
+		return
+	}
+
+	apiFormat := channel.APIFormat
+	if apiFormat == "" || apiFormat == "openai" {
+		apiFormat = "openai-response"
+	}
+
+	var upstreamURL string
+	var req *http.Request
+
+	baseURL := strings.TrimRight(channel.BaseURL, "/")
+	if apiFormat == "gemini" {
+		if !strings.HasSuffix(strings.ToLower(baseURL), "/v1beta") && !strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
+			baseURL += "/v1beta"
+		}
+		upstreamURL = baseURL + "/models"
+		req, _ = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		req.Header.Set("x-goog-api-key", apiKey)
+	} else {
+		if !strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
+			baseURL += "/v1"
+		}
+		upstreamURL = baseURL + "/models"
+		req, _ = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to fetch models from upstream"})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(resp.StatusCode, gin.H{"error": fmt.Sprintf("upstream returned %d", resp.StatusCode)})
+		return
+	}
+
+	var models []string
+	if apiFormat == "gemini" {
+		var geminiResp struct {
+			Models []struct {
+				Name string `json:"name"`
+			} `json:"models"`
+		}
+		if json.Unmarshal(body, &geminiResp) == nil {
+			for _, m := range geminiResp.Models {
+				name := strings.TrimPrefix(m.Name, "models/")
+				if name != "" {
+					models = append(models, name)
+				}
+			}
+		}
+	} else {
+		var openaiResp struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(body, &openaiResp) == nil {
+			for _, m := range openaiResp.Data {
+				if m.ID != "" {
+					models = append(models, m.ID)
+				}
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"models": models})
 }

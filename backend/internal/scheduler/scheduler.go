@@ -271,16 +271,19 @@ func (s *Scheduler) failTask(task *model.Task, errMsg string) {
 
 func (s *Scheduler) resolveChannel(task *model.Task) (apiKey, baseURL string, err error) {
 	if task.Provider == "runninghub" {
-		var channel model.ApiChannel
-		if err := s.db.Where("user_id = ? AND provider = ? AND enabled = ?",
-			task.UserID, "runninghub", true).First(&channel).Error; err != nil {
-			return "", "", fmt.Errorf("no RunningHub channel configured")
+		var settings model.UserSettings
+		if err := s.db.Where("user_id = ?", task.UserID).First(&settings).Error; err != nil {
+			return "", "", fmt.Errorf("no RunningHub API key configured")
 		}
-		key, err := s.aesCrypto.Decrypt(channel.EncryptedAPIKey)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to decrypt API key")
+		var m map[string]any
+		if json.Unmarshal([]byte(settings.Settings), &m) != nil {
+			return "", "", fmt.Errorf("no RunningHub API key configured")
 		}
-		return key, channel.BaseURL, nil
+		key, _ := m["runninghubApiKey"].(string)
+		if key == "" {
+			return "", "", fmt.Errorf("no RunningHub API key configured")
+		}
+		return key, "", nil
 	}
 
 	var channel model.ApiChannel

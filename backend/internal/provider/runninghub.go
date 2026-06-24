@@ -52,6 +52,10 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
 
+	if params.MediaFileIDs == nil {
+		params.MediaFileIDs = make(map[string]string)
+	}
+
 	if params.InstanceType == "" {
 		params.InstanceType = "default"
 	}

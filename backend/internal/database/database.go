@@ -45,6 +45,9 @@ func Open(cfg *config.DatabaseConfig, logLevel string) (*gorm.DB, error) {
 		&model.ApiChannel{},
 		&model.Task{},
 		&model.AuditLog{},
+		&model.UserSettings{},
+		&model.CanvasProject{},
+		&model.Asset{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to auto-migrate: %w", err)
 	}

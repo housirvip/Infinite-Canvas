@@ -263,6 +263,7 @@ function InfiniteCanvasPage() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const projectId = params.id;
+    const snapshotProjectId = projectId ?? "";
     const localAgentConnected = useCanvasAgentStore((state) => state.connected);
     const localAgentActivity = useCanvasAgentStore((state) => state.activity);
     const localAgentEnabled = useCanvasAgentStore((state) => state.enabled);
@@ -571,7 +572,7 @@ function InfiniteCanvasPage() {
     );
 
     useEffect(() => {
-        if (!projectLoaded || historyPausedRef.current) return;
+        if (!projectId || !projectLoaded || historyPausedRef.current) return;
         updateProject(projectId, { nodes, connections, chatSessions, activeChatId, backgroundMode, showImageInfo });
     }, [activeChatId, backgroundMode, chatSessions, connections, nodes, projectId, projectLoaded, showImageInfo, updateProject]);
 
@@ -580,7 +581,7 @@ function InfiniteCanvasPage() {
     }, [dialogNodeId]);
 
     useEffect(() => {
-        if (!projectLoaded) return;
+        if (!projectId || !projectLoaded) return;
         if (viewportSaveTimerRef.current) clearTimeout(viewportSaveTimerRef.current);
         viewportSaveTimerRef.current = setTimeout(() => {
             updateProject(projectId, { viewport: viewportRef.current });
@@ -830,13 +831,13 @@ function InfiniteCanvasPage() {
         return map;
     }, [connections, nodes]);
     const agentSnapshot = useMemo<CanvasAgentSnapshot>(
-        () => ({ projectId, title: currentProject?.title || "未命名画布", nodes, connections, selectedNodeIds: Array.from(selectedNodeIds), viewport }),
-        [connections, currentProject?.title, nodes, projectId, selectedNodeIds, viewport],
+        () => ({ projectId: snapshotProjectId, title: currentProject?.title || "未命名画布", nodes, connections, selectedNodeIds: Array.from(selectedNodeIds), viewport }),
+        [connections, currentProject?.title, nodes, selectedNodeIds, snapshotProjectId, viewport],
     );
     const applyAgentOps = useCallback(
         (ops?: CanvasAgentOp[]) => {
             const safeOps = Array.isArray(ops) ? ops.filter((op) => op?.type) : [];
-            const before = { projectId, title: currentProject?.title || "未命名画布", nodes: nodesRef.current, connections: connectionsRef.current, selectedNodeIds: Array.from(selectedNodeIdsRef.current), viewport: viewportRef.current };
+            const before = { projectId: snapshotProjectId, title: currentProject?.title || "未命名画布", nodes: nodesRef.current, connections: connectionsRef.current, selectedNodeIds: Array.from(selectedNodeIdsRef.current), viewport: viewportRef.current };
             const generationOps = safeOps.filter((op): op is Extract<CanvasAgentOp, { type: "run_generation" }> => op.type === "run_generation" && Boolean(op.nodeId));
             const next = applyCanvasAgentOps(before, safeOps.filter((op) => op.type !== "run_generation"));
             nodesRef.current = next.nodes;
@@ -859,9 +860,9 @@ function InfiniteCanvasPage() {
                     }),
                 );
             }
-            return { ...next, projectId, title: currentProject?.title || "未命名画布" };
+            return { ...next, projectId: snapshotProjectId, title: currentProject?.title || "未命名画布" };
         },
-        [currentProject?.title, projectId],
+        [currentProject?.title, snapshotProjectId],
     );
     const undoAgentOps = useCallback(() => {
         if (!agentUndoSnapshot) return null;
@@ -876,8 +877,8 @@ function InfiniteCanvasPage() {
         setViewport(agentUndoSnapshot.viewport);
         setContextMenu(null);
         setAgentUndoSnapshot(null);
-        return { ...agentUndoSnapshot, projectId, title: currentProject?.title || "未命名画布" };
-    }, [agentUndoSnapshot, currentProject?.title, projectId]);
+        return { ...agentUndoSnapshot, projectId: snapshotProjectId, title: currentProject?.title || "未命名画布" };
+    }, [agentUndoSnapshot, currentProject?.title, snapshotProjectId]);
     const createNode = useCallback(
         (type: CanvasNodeType, position?: Position) => {
             const targetPosition = position || getCanvasCenter();
@@ -1133,6 +1134,7 @@ function InfiniteCanvasPage() {
     }, [createProject, navigate]);
 
     const deleteCurrentProject = useCallback(() => {
+        if (!projectId) return;
         deleteProjects([projectId]);
         cleanupAssetImages();
         navigate("/canvas");
@@ -2052,7 +2054,7 @@ function InfiniteCanvasPage() {
 
     const finishTitleEditing = useCallback(() => {
         const nextTitle = titleDraft.trim();
-        if (nextTitle) renameProject(projectId, nextTitle);
+        if (projectId && nextTitle) renameProject(projectId, nextTitle);
         setTitleEditing(false);
     }, [projectId, renameProject, titleDraft]);
 

@@ -333,6 +333,8 @@ export const CanvasNode = React.memo(function CanvasNode({
 });
 
 function NodeContent(props: NodeContentRendererProps) {
+    const progressText = readProgressText(props.node.metadata);
+
     if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (props.node.type === CanvasNodeType.RunningHub) return <RunningHubNodeContent {...props} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
@@ -340,7 +342,7 @@ function NodeContent(props: NodeContentRendererProps) {
         if (props.node.type === CanvasNodeType.Text && props.node.metadata?.content) {
             return <StreamingTextContent node={props.node} theme={props.theme} />;
         }
-        return <LoadingContent theme={props.theme} progressText={props.node.metadata?.progressText} />;
+        return <LoadingContent theme={props.theme} progressText={progressText} />;
     }
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} />;
 
@@ -364,6 +366,10 @@ function LoadingContent({ theme, progressText }: Pick<NodeContentRendererProps, 
             <span className="text-[10px] tracking-[0.2em]">{progressText || "生成中"}</span>
         </div>
     );
+}
+function readProgressText(metadata: CanvasNodeData["metadata"]) {
+    if (!metadata || !("progressText" in metadata)) return undefined;
+    return typeof metadata.progressText === "string" ? metadata.progressText : undefined;
 }
 
 function StreamingTextContent({ node, theme }: Pick<NodeContentRendererProps, "node" | "theme">) {

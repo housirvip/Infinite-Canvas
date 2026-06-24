@@ -1,10 +1,11 @@
-import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 import type { RunningHubWorkflow } from "@/lib/runninghub";
+import * as channelApi from "@/services/backend-channel";
+import * as settingsApi from "@/services/backend-settings";
 
-export type ApiCallFormat = "openai" | "gemini";
+export type ApiCallFormat = "openai-response" | "openai-completion" | "gemini";
 
 export type ModelChannel = {
     id: string;
@@ -64,17 +65,17 @@ const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 
 export const defaultConfig: AiConfig = {
-    channelMode: "local",
+    channelMode: "remote",
     baseUrl: OPENAI_BASE_URL,
     apiKey: "",
-    apiFormat: "openai",
+    apiFormat: "openai-response",
     channels: [
         {
             id: "default",
             name: "默认渠道",
             baseUrl: OPENAI_BASE_URL,
             apiKey: "",
-            apiFormat: "openai",
+            apiFormat: "openai-response",
             models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
         },
     ],
@@ -100,7 +101,7 @@ export const defaultConfig: AiConfig = {
     quality: "auto",
     size: "1:1",
     count: "1",
-    canvasImageCount: "3",
+    canvasImageCount: "1",
     runninghubApiKey: "",
     runninghubWorkflows: [],
 };
@@ -119,12 +120,15 @@ type ConfigStore = {
     webdav: WebdavSyncConfig;
     isConfigOpen: boolean;
     shouldPromptContinue: boolean;
+    serverChannelMap: Map<string, number>;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
     clearPromptContinue: () => void;
+    fetchConfigFromServer: () => Promise<void>;
+    getServerChannelId: (localChannelId: string) => number | undefined;
 };
 
 function isVideoModelName(model: string) {
@@ -169,7 +173,7 @@ function modelListKey(capability: ModelCapability) {
 
 function isAiConfigReady(config: AiConfig, model: string) {
     const channel = resolveModelChannel(config, model);
-    return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
+    return Boolean(model.trim() && channel.baseUrl.trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -179,6 +183,7 @@ export const useConfigStore = create<ConfigStore>()(
             webdav: defaultWebdavSyncConfig,
             isConfigOpen: false,
             shouldPromptContinue: false,
+            serverChannelMap: new Map<string, number>(),
             updateConfig: (key, value) =>
                 set((state) => ({
                     config: {
@@ -197,6 +202,51 @@ export const useConfigStore = create<ConfigStore>()(
             openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
+            getServerChannelId: (localChannelId) => get().serverChannelMap.get(localChannelId),
+            fetchConfigFromServer: async () => {
+                try {
+                    const [serverChannels, settingsJson] = await Promise.all([
+                        channelApi.listChannels(),
+                        settingsApi.getSettings(),
+                    ]);
+
+                    const channelMap = new Map<string, number>();
+                    const channels: ModelChannel[] = serverChannels.map((ch) => {
+                        const localId = `server-${ch.id}`;
+                        channelMap.set(localId, ch.id);
+                        let models: string[] = [];
+                        try { models = ch.models ? JSON.parse(ch.models) : []; } catch { models = []; }
+                        return createModelChannel({
+                            id: localId,
+                            name: ch.name,
+                            baseUrl: ch.baseUrl,
+                            apiKey: "",
+                            apiFormat: (ch.apiFormat || "openai-response") as ApiCallFormat,
+                            models,
+                        });
+                    });
+
+                    const serverSettings = (settingsJson || {}) as Partial<AiConfig>;
+
+                    const effectiveChannels = channels.length ? channels : get().config.channels;
+                    const models = modelOptionsFromChannels(effectiveChannels);
+
+                    set((state) => ({
+                        serverChannelMap: channelMap,
+                        config: {
+                            ...state.config,
+                            ...serverSettings,
+                            channelMode: "remote" as const,
+                            channels: effectiveChannels,
+                            models,
+                            imageModels: serverSettings.imageModels || filterModelsByCapability(models, "image"),
+                            videoModels: serverSettings.videoModels || filterModelsByCapability(models, "video"),
+                            textModels: serverSettings.textModels || filterModelsByCapability(models, "text"),
+                            audioModels: serverSettings.audioModels || filterModelsByCapability(models, "audio"),
+                        },
+                    }));
+                } catch {}
+            },
         }),
         {
             name: CONFIG_STORE_KEY,
@@ -214,7 +264,7 @@ export const useConfigStore = create<ConfigStore>()(
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
                     config: {
                         ...config,
-                        channelMode: "local",
+                        channelMode: "remote",
                         apiFormat: normalizeApiFormat(config.apiFormat),
                         channels,
                         models,
@@ -230,7 +280,7 @@ export const useConfigStore = create<ConfigStore>()(
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
-                        canvasImageCount: config.canvasImageCount || "3",
+                        canvasImageCount: config.canvasImageCount || "1",
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
                         videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"),
                         textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels, channels) : filterModelsByCapability(models, "text"),
@@ -251,7 +301,7 @@ function normalizeModelList(models: string[], channels: ModelChannel[]) {
 
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
-    return useMemo(() => ({ ...config, channelMode: "local" as const }), [config]);
+    return config;
 }
 
 export function createModelChannel(channel?: Partial<ModelChannel>): ModelChannel {
@@ -322,6 +372,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
+        _channelLocalId: channel.id,
     };
 }
 
@@ -362,7 +413,9 @@ export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
 }
 
 function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
-    return apiFormat === "gemini" ? "gemini" : "openai";
+    if (apiFormat === "gemini") return "gemini";
+    if (apiFormat === "openai-completion") return "openai-completion";
+    return "openai-response";
 }
 
 function uniqueRawModels(models: string[]) {

@@ -34,6 +34,7 @@ export function AppConfigModal() {
     const { message } = App.useApp();
     const [activeTab, setActiveTab] = useState("channels");
     const [loadingChannelId, setLoadingChannelId] = useState("");
+    const [apiKeyDrafts, setApiKeyDrafts] = useState<Record<string, string>>({});
     const config = useConfigStore((state) => state.config);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
@@ -76,7 +77,9 @@ export function AppConfigModal() {
     };
 
     const updateChannel = (id: string, patch: Partial<ModelChannel>) => {
-        updateChannels(config.channels.map((channel) => (channel.id === id ? { ...channel, ...patch, models: patch.models ? uniqueModels(patch.models) : channel.models } : channel)));
+        const nextChannels = config.channels.map((channel) => (channel.id === id ? { ...channel, ...patch, models: patch.models ? uniqueModels(patch.models) : channel.models } : channel));
+        updateChannels(nextChannels);
+        const nextChannel = nextChannels.find((channel) => channel.id === id);
         const serverChannelId = useConfigStore.getState().getServerChannelId(id);
         if (serverChannelId) {
             const payload: channelApi.UpdateChannelPayload = {};
@@ -85,7 +88,14 @@ export function AppConfigModal() {
             if (patch.apiFormat !== undefined) payload.apiFormat = patch.apiFormat;
             if (patch.models !== undefined) payload.models = uniqueModels(patch.models);
             if (patch.apiKey !== undefined && patch.apiKey !== "") payload.apiKey = patch.apiKey;
-            if (Object.keys(payload).length) channelApi.updateChannel(serverChannelId, payload).catch(() => {});
+            if (Object.keys(payload).length) channelApi.updateChannel(serverChannelId, payload).catch(() => message.error("渠道保存失败"));
+        } else if (nextChannel && patch.apiKey) {
+            channelApi.createChannel({ name: nextChannel.name, provider: nextChannel.apiFormat, baseUrl: nextChannel.baseUrl, apiKey: patch.apiKey, apiFormat: nextChannel.apiFormat, models: nextChannel.models }).then((serverChannel) => {
+                const localId = `server-${serverChannel.id}`;
+                useConfigStore.setState((state) => ({ serverChannelMap: new Map(state.serverChannelMap).set(localId, serverChannel.id), config: { ...state.config, channels: state.config.channels.map((channel) => (channel.id === id ? { ...nextChannel, id: localId, apiKey: "" } : channel)) } }));
+                setApiKeyDrafts((drafts) => omitKey(drafts, id));
+                message.success("API Key 已保存");
+            }).catch(() => message.error("API Key 保存失败"));
         }
     };
 
@@ -93,12 +103,17 @@ export function AppConfigModal() {
         const baseUrl = !channel.baseUrl.trim() || channel.baseUrl.trim() === defaultBaseUrlForApiFormat(channel.apiFormat) ? defaultBaseUrlForApiFormat(apiFormat) : channel.baseUrl;
         updateChannel(channel.id, { apiFormat, baseUrl });
     };
+    const commitChannelApiKey = (channel: ModelChannel) => {
+        const apiKey = apiKeyDrafts[channel.id]?.trim();
+        if (!apiKey) return;
+        updateChannel(channel.id, { apiKey });
+    };
 
     const addChannel = async () => {
         const newChannel = createModelChannel({ name: `渠道 ${config.channels.length + 1}` });
         updateChannels([...config.channels, newChannel]);
         try {
-            const serverChannel = await channelApi.createChannel({ name: newChannel.name, baseUrl: newChannel.baseUrl, apiFormat: newChannel.apiFormat, models: newChannel.models });
+            const serverChannel = await channelApi.createChannel({ name: newChannel.name, provider: newChannel.apiFormat, baseUrl: newChannel.baseUrl, apiKey: "", apiFormat: newChannel.apiFormat, models: newChannel.models });
             const localId = `server-${serverChannel.id}`;
             const updatedChannel = { ...newChannel, id: localId };
             useConfigStore.setState((state) => {
@@ -249,11 +264,11 @@ export function AppConfigModal() {
                                                 </Form.Item>
                                                 <Form.Item label="API Key" className="mb-0">
                                                     <Input.Password
-                                                        value=""
+                                                        value={apiKeyDrafts[channel.id] || ""}
                                                         placeholder={useConfigStore.getState().getServerChannelId(channel.id) ? "已保存（输入新值覆盖）" : "输入 API Key"}
-                                                        onChange={(event) => {
-                                                            if (event.target.value) updateChannel(channel.id, { apiKey: event.target.value });
-                                                        }}
+                                                        onChange={(event) => setApiKeyDrafts((drafts) => ({ ...drafts, [channel.id]: event.target.value }))}
+                                                        onBlur={() => commitChannelApiKey(channel)}
+                                                        onPressEnter={() => commitChannelApiKey(channel)}
                                                     />
                                                 </Form.Item>
                                                 <Form.Item label="模型列表" className="mb-0 md:col-span-2">
@@ -395,6 +410,11 @@ function normalizeImageCount(value: string) {
 
 function uniqueModels(models: string[]) {
     return Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
+}
+
+function omitKey<T>(record: Record<string, T>, key: string) {
+    const { [key]: _removed, ...rest } = record;
+    return rest;
 }
 
 function apiFormatLabel(apiFormat: ApiCallFormat) {

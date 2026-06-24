@@ -353,8 +353,9 @@ export function normalizeModelOptionValue(value: string | undefined, channels: M
         const channel = channels.find((item) => item.id === decoded.channelId);
         return channel && channel.models.includes(decoded.model) ? model : "";
     }
-    const channel = channels.find((item) => item.models.includes(decoded?.model || model)) || channels[0];
-    return channel && channel.models.includes(decoded?.model || model) ? encodeChannelModel(channel.id, decoded?.model || model) : model;
+    const selectedModel = model;
+    const channel = channels.find((item) => item.models.includes(selectedModel)) || channels[0];
+    return channel && channel.models.includes(selectedModel) ? encodeChannelModel(channel.id, selectedModel) : model;
 }
 
 export function resolveModelChannel(config: AiConfig, value: string) {

@@ -10,3 +10,5 @@ data/
 .idea
 .codegraph/
 web/dist/
+bun.lock
+go.sum

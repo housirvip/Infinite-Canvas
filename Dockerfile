@@ -1,4 +1,4 @@
-# 构建 Next.js 前端产物。
+# 构建前端静态产物
 FROM docker.m.daocloud.io/oven/bun:1.3.13 AS web-build
 
 WORKDIR /app/web
@@ -9,20 +9,28 @@ COPY CHANGELOG.md /app/CHANGELOG.md
 COPY web ./
 RUN bun run build
 
-# 运行镜像：只启动 Next.js，AI 请求由浏览器前台直连用户自己的接口。
-FROM docker.m.daocloud.io/node:22-bookworm-slim
+# 构建 Go 后端
+FROM docker.m.daocloud.io/golang:1.22-bookworm AS backend-build
+
+WORKDIR /app/backend
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN CGO_ENABLED=1 go build -o /app/server ./cmd/server
+
+# 运行镜像：Go 后端 + 静态前端
+FROM docker.m.daocloud.io/debian:bookworm-slim
 
 WORKDIR /app
-COPY VERSION /app/VERSION
-COPY CHANGELOG.md /app/CHANGELOG.md
-COPY --from=web-build /app/web/public /app/web/public
-COPY --from=web-build /app/web/.next/standalone /app/web
-COPY --from=web-build /app/web/.next/static /app/web/.next/static
-ENV NODE_ENV=production
-ENV HOSTNAME=0.0.0.0
-ENV PORT=3000
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 3000
-CMD ["sh", "-c", "cd /app/web && PORT=3000 node server.js"]
+COPY --from=backend-build /app/server /app/server
+COPY --from=web-build /app/web/dist /app/web/dist
+COPY VERSION /app/VERSION
+COPY CHANGELOG.md /app/CHANGELOG.md
+
+ENV GIN_MODE=release
+EXPOSE 3040
+
+CMD ["/app/server"]

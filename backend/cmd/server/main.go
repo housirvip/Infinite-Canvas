@@ -109,6 +109,11 @@ func main() {
 	wsHandler := handler.NewWSHandler(hub, jwtMgr)
 	api.GET("/ws", wsHandler.Handle)
 
+	// Proxy (prompts aggregator + WebDAV)
+	proxyHandler := handler.NewProxyHandler()
+	api.GET("/prompts", proxyHandler.Prompts)
+	api.POST("/webdav-proxy", proxyHandler.WebDAVProxy)
+
 	// Admin
 	adminHandler := handler.NewAdminHandler(db)
 	adminGroup := api.Group("/admin", middleware.AuthRequired(jwtMgr), middleware.AdminRequired())

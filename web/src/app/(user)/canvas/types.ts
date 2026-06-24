@@ -15,6 +15,7 @@ export enum CanvasNodeType {
     Config = "config",
     Video = "video",
     Audio = "audio",
+    RunningHub = "runninghub",
 }
 
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
@@ -56,6 +57,14 @@ export type CanvasNodeMetadata = {
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
+    // RunningHub
+    runninghubWorkflowId?: string;
+    runninghubTaskId?: string;
+    runninghubInstanceType?: "default" | "plus";
+    runninghubTimeout?: number;
+    runninghubLastError?: string;
+    runninghubStatus?: string;
+    runninghubParamValues?: Record<string, string>;
 };
 
 export type CanvasNodeData = {

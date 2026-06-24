@@ -1,5 +1,5 @@
 # 构建 Next.js 前端产物。
-FROM oven/bun:1.3.13 AS web-build
+FROM docker.m.daocloud.io/oven/bun:1.3.13 AS web-build
 
 WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
@@ -10,7 +10,7 @@ COPY web ./
 RUN bun run build
 
 # 运行镜像：只启动 Next.js，AI 请求由浏览器前台直连用户自己的接口。
-FROM node:22-bookworm-slim
+FROM docker.m.daocloud.io/node:22-bookworm-slim
 
 WORKDIR /app
 COPY VERSION /app/VERSION
@@ -21,7 +21,8 @@ COPY --from=web-build /app/web/.next/static /app/web/.next/static
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 3000
 CMD ["sh", "-c", "cd /app/web && PORT=3000 node server.js"]

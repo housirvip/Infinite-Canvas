@@ -1,11 +1,11 @@
 import { Workflow, LoaderCircle, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 
-import { useConfigStore } from "@/stores/use-config-store";
+import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { CanvasNodeType, type CanvasNodeData } from "../types";
 
 export function RunningHubNodeContent({ node, theme }: { node: CanvasNodeData; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
-    const workflows = useConfigStore((state) => state.config.runninghubWorkflows);
+    const workflows = useRunningHubStore((state) => state.workflows);
     const workflow = workflows.find((w) => w.id === node.metadata?.runninghubWorkflowId);
     const status = node.metadata?.status || "idle";
     const statusText = node.metadata?.runninghubStatus || "";

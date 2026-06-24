@@ -3,7 +3,7 @@ import { LoaderCircle, Play, RefreshCw, Square } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { RUNNINGHUB_DEFAULT_TIMEOUT_S, RUNNINGHUB_TIMEOUT_OPTIONS, paramKey } from "@/lib/runninghub";
-import { useConfigStore } from "@/stores/use-config-store";
+import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata } from "../types";
 
@@ -31,9 +31,9 @@ type RunningHubPanelProps = {
 export function CanvasRunningHubPanel({ node, isRunning, hasTaskId, upstreamNodes, onParamChange, onConfigChange, onExecute, onResume, onStop }: RunningHubPanelProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const { message } = App.useApp();
-    const config = useConfigStore((state) => state.config);
-    const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-    const workflows = config.runninghubWorkflows;
+    const workflows = useRunningHubStore((state) => state.workflows);
+    const hasApiKey = useRunningHubStore((state) => state.hasApiKey);
+    const openRunningHubDialog = useRunningHubStore((state) => state.openDialog);
     const selectedWorkflowId = node.metadata?.runninghubWorkflowId || "";
     const timeout = node.metadata?.runninghubTimeout || RUNNINGHUB_DEFAULT_TIMEOUT_S;
     const instanceType = node.metadata?.runninghubInstanceType || "default";
@@ -54,13 +54,23 @@ export function CanvasRunningHubPanel({ node, isRunning, hasTaskId, upstreamNode
     const workflowOptions = workflows.map((w) => ({ label: w.name, value: w.id }));
 
     const handleExecute = () => {
-        if (!config.runninghubApiKey) {
-            message.warning("请先在设置中配置 RunningHub API Key");
-            openConfigDialog();
+        if (!hasApiKey) {
+            message.warning("请先配置 RunningHub API Key");
+            openRunningHubDialog();
+            return;
+        }
+        if (!workflows.length) {
+            message.warning("请先配置 RunningHub 工作流");
+            openRunningHubDialog();
             return;
         }
         if (!selectedWorkflowId) {
             message.warning("请先选择工作流");
+            return;
+        }
+        if (!workflow) {
+            message.warning("当前工作流不存在，请重新配置");
+            openRunningHubDialog();
             return;
         }
         onExecute(node.id);
@@ -93,8 +103,8 @@ export function CanvasRunningHubPanel({ node, isRunning, hasTaskId, upstreamNode
                     notFoundContent={
                         <div className="py-2 text-center text-xs text-stone-400">
                             暂无工作流，
-                            <Button type="link" size="small" className="!px-0 !text-xs" onClick={() => openConfigDialog()}>
-                                去设置
+                            <Button type="link" size="small" className="!px-0 !text-xs" onClick={() => openRunningHubDialog()}>
+                                去配置
                             </Button>
                         </div>
                     }
@@ -201,16 +211,30 @@ export function CanvasRunningHubPanel({ node, isRunning, hasTaskId, upstreamNode
                     {/* String params */}
                     {stringParams.map((param) => {
                         const key = paramKey(param);
+                        const value = paramValues[key] ?? param.defaultValue;
+                        const enumOptions = (param.enumOptions || []).map((option) => ({ label: option, value: option }));
                         return (
                             <div key={key}>
                                 <div className="mb-1 text-xs text-stone-500">{param.label}</div>
-                                <Input
-                                    size="small"
-                                    value={paramValues[key] ?? param.defaultValue ?? ""}
-                                    placeholder={param.description || param.label}
-                                    style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
-                                    onChange={(e) => onParamChange(node.id, key, e.target.value)}
-                                />
+                                {enumOptions.length > 0 ? (
+                                    <Select
+                                        size="small"
+                                        className="!w-full"
+                                        value={value}
+                                        placeholder={param.description || param.label}
+                                        options={enumOptions}
+                                        style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
+                                        onChange={(selectedValue) => onParamChange(node.id, key, selectedValue)}
+                                    />
+                                ) : (
+                                    <Input
+                                        size="small"
+                                        value={value ?? ""}
+                                        placeholder={param.description || param.label}
+                                        style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
+                                        onChange={(e) => onParamChange(node.id, key, e.target.value)}
+                                    />
+                                )}
                             </div>
                         );
                     })}

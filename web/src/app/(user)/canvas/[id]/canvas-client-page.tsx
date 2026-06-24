@@ -9,6 +9,7 @@ import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audi
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { DOCS_URL } from "@/constant/env";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { getImageBlob, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, getMediaBlob, type UploadedFile } from "@/services/file-storage";
 import { backendWs, type TaskResult } from "@/services/backend-ws";
@@ -40,8 +41,7 @@ import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
 import { CanvasRunningHubPanel } from "../components/canvas-runninghub-panel";
-import { executeRunningHubWorkflow, resumeRunningHubPoll, RunningHubTimeoutError } from "@/services/api/runninghub";
-import { RUNNINGHUB_DEFAULT_TIMEOUT_S, buildNodeInfoList, paramKey, type RunningHubParamValues } from "@/lib/runninghub";
+import { buildNodeInfoList, paramKey, type RunningHubParamValues } from "@/lib/runninghub";
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
@@ -299,6 +299,9 @@ function InfiniteCanvasPage() {
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const runningHubWorkflows = useRunningHubStore((state) => state.workflows);
+    const runningHubHasApiKey = useRunningHubStore((state) => state.hasApiKey);
+    const openRunningHubDialog = useRunningHubStore((state) => state.openDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
     const hydrated = useCanvasStore((state) => state.hydrated);
@@ -2424,8 +2427,17 @@ function InfiniteCanvasPage() {
         async (nodeId: string) => {
             const node = nodesRef.current.find((n) => n.id === nodeId);
             if (!node) return;
-            const workflow = effectiveConfig.runninghubWorkflows.find((w) => w.id === node.metadata?.runninghubWorkflowId);
-            if (!workflow || !effectiveConfig.runninghubApiKey) return;
+            const workflow = runningHubWorkflows.find((w) => w.id === node.metadata?.runninghubWorkflowId);
+            if (!runningHubHasApiKey) {
+                message.warning("请先配置 RunningHub API Key");
+                openRunningHubDialog();
+                return;
+            }
+            if (!workflow) {
+                message.warning("请先配置 RunningHub 工作流");
+                openRunningHubDialog();
+                return;
+            }
 
             const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
             setRunningNodeId(nodeId);
@@ -2500,25 +2512,26 @@ function InfiniteCanvasPage() {
                 createRunningHubOutputNodes(nodeId, rhResults);
                 setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, runninghubStatus: undefined, runninghubTaskId: undefined } } : n)));
             } catch (error) {
-                if (error instanceof RunningHubTimeoutError) {
-                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubTaskId: error.taskId, runninghubLastError: error.message, runninghubStatus: undefined } } : n)));
-                } else {
-                    const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "执行失败";
-                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubLastError: errorMessage, runninghubStatus: undefined } } : n)));
-                }
+                const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "执行失败";
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubLastError: errorMessage, runninghubStatus: undefined } } : n)));
             } finally {
                 finishGenerationRequest(nodeId, abortController);
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, startGenerationRequest, finishGenerationRequest],
+        [message, openRunningHubDialog, runningHubWorkflows, runningHubHasApiKey, startGenerationRequest, finishGenerationRequest],
     );
 
     const handleRunningHubResume = useCallback(
         async (nodeId: string) => {
             const node = nodesRef.current.find((n) => n.id === nodeId);
             const taskId = node?.metadata?.runninghubTaskId;
-            if (!taskId || !effectiveConfig.runninghubApiKey) return;
+            if (!runningHubHasApiKey) {
+                message.warning("请先配置 RunningHub API Key");
+                openRunningHubDialog();
+                return;
+            }
+            if (!taskId) return;
 
             const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
             setRunningNodeId(nodeId);
@@ -2540,18 +2553,14 @@ function InfiniteCanvasPage() {
                 createRunningHubOutputNodes(nodeId, rhResults);
                 setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, runninghubStatus: undefined, runninghubTaskId: undefined } } : n)));
             } catch (error) {
-                if (error instanceof RunningHubTimeoutError) {
-                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubTaskId: error.taskId, runninghubLastError: error.message, runninghubStatus: undefined } } : n)));
-                } else {
-                    const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "查询失败";
-                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubLastError: errorMessage, runninghubStatus: undefined } } : n)));
-                }
+                const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "查询失败";
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubLastError: errorMessage, runninghubStatus: undefined } } : n)));
             } finally {
                 finishGenerationRequest(nodeId, abortController);
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, startGenerationRequest, finishGenerationRequest],
+        [message, openRunningHubDialog, runningHubHasApiKey, startGenerationRequest, finishGenerationRequest],
     );
 
     const createRunningHubOutputNodes = useCallback((sourceNodeId: string, results: Array<{ type: "image" | "video" | "text" | "audio"; id: string; url?: string; dataUrl?: string; storageKey?: string; width?: number; height?: number; bytes?: number; mimeType?: string; durationMs?: number; text?: string }>) => {

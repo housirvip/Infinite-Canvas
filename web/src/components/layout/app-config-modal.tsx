@@ -5,6 +5,7 @@ import { CircleAlert, Cloud, Plus, RefreshCw, Trash2, Wifi } from "lucide-react"
 import { useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
+import { RunningHubConfigTab } from "@/components/layout/runninghub-workflow-editor";
 import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -39,12 +40,13 @@ const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
     { label: "Gemini", value: "gemini" },
 ];
 
-const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench"];
+const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench", "settings"];
 const webdavDomainLabels: Record<AppSyncDomainKey, string> = {
     canvas: "画布",
     assets: "我的素材",
     "image-workbench": "生图工作台",
     "video-workbench": "视频创作台",
+    settings: "配置",
 };
 
 function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProgress> {
@@ -372,6 +374,11 @@ export function AppConfigModal() {
                                 </Form.Item>
                             </Form>
                         ),
+                    },
+                    {
+                        key: "runninghub",
+                        label: "RunningHub",
+                        children: <RunningHubConfigTab config={config} onConfigChange={(key, value) => updateConfig(key, value)} />,
                     },
                     {
                         key: "webdav",

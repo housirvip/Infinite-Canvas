@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
+import type { RunningHubWorkflow } from "@/lib/runninghub";
 
 export type ApiCallFormat = "openai" | "gemini";
 
@@ -45,6 +46,8 @@ export type AiConfig = {
     size: string;
     count: string;
     canvasImageCount: string;
+    runninghubApiKey: string;
+    runninghubWorkflows: RunningHubWorkflow[];
 };
 
 export type WebdavSyncConfig = {
@@ -100,6 +103,8 @@ export const defaultConfig: AiConfig = {
     size: "1:1",
     count: "1",
     canvasImageCount: "3",
+    runninghubApiKey: "",
+    runninghubWorkflows: [],
 };
 
 export const defaultWebdavSyncConfig: WebdavSyncConfig = {

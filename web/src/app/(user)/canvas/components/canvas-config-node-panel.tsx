@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { Image as ImageIcon, LoaderCircle, MessageSquare, Music2, Play, Settings2, Square, Video } from "lucide-react";
+import { Image as ImageIcon, LoaderCircle, MessageSquare, Minus, Music2, Play, Plus, Settings2, Square, Video } from "lucide-react";
 import { Button, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -29,7 +29,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
     const mode = node.metadata?.generationMode || "image";
     const config = buildNodeConfig(globalConfig, node, mode);
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const credits = requestCreditCost({ channelMode: config.channelMode, model: config.model, count: mode === "image" ? count : 1 });
+    const credits = requestCreditCost({ channelMode: config.channelMode, model: config.model, count });
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
     const hasAnyInput = Boolean(inputSummary.textCount || inputSummary.imageCount || inputSummary.videoCount || inputSummary.audioCount);
     const hasComposerContent = Boolean((node.metadata?.composerContent ?? node.metadata?.prompt ?? "").trim());
@@ -47,20 +47,20 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                         onChange={(value) => onConfigChange(node.id, { generationMode: value as CanvasGenerationMode })}
                         options={[
                             {
-                                value: "image",
-                                label: (
-                                    <span className="inline-flex items-center gap-1">
-                                        <ImageIcon className="size-3.5" />
-                                        生图
-                                    </span>
-                                ),
-                            },
-                            {
                                 value: "text",
                                 label: (
                                     <span className="inline-flex items-center gap-1">
                                         <MessageSquare className="size-3.5" />
                                         文本
+                                    </span>
+                                ),
+                            },
+                            {
+                                value: "image",
+                                label: (
+                                    <span className="inline-flex items-center gap-1">
+                                        <ImageIcon className="size-3.5" />
+                                        生图
                                     </span>
                                 ),
                             },
@@ -98,7 +98,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 </button>
             </div>
 
-            <div className={`mb-2 grid min-w-0 cursor-default items-center gap-2 ${mode === "image" || mode === "video" || mode === "audio" ? "grid-cols-[minmax(0,1fr)_148px]" : "grid-cols-1"}`} onMouseDown={(event) => event.stopPropagation()}>
+            <div className={`mb-2 grid min-w-0 cursor-default items-center gap-2 ${mode === "text" ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_148px]"}`} onMouseDown={(event) => event.stopPropagation()}>
                 <ModelPicker className="canvas-compact-control h-10" config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability={mode} onMissingConfig={() => openConfigDialog(true)} fullWidth />
                 {mode === "video" ? (
                     <CanvasVideoSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
@@ -106,7 +106,9 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                     <CanvasImageSettingsPopover config={config} placement="topRight" autoAdjustOverflow={false} buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })} />
                 ) : mode === "audio" ? (
                     <CanvasAudioSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
-                ) : null}
+                ) : (
+                    <CountStepper value={count} chipStyle={chipStyle} onChange={(value) => onConfigChange(node.id, { count: value })} />
+                )}
             </div>
 
             <Button
@@ -164,7 +166,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
-        count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
+        count: String(node.metadata?.count || globalConfig.canvasImageCount || globalConfig.count || defaultConfig.count),
     };
 }
 
@@ -180,4 +182,28 @@ function audioConfigPatch(key: CanvasAudioSettingKey, value: string) {
     if (key === "audioFormat") return { audioFormat: value };
     if (key === "audioSpeed") return { audioSpeed: value };
     return { audioInstructions: value };
+}
+
+function CountStepper({ value, chipStyle, onChange }: { value: number; chipStyle: CSSProperties; onChange: (value: number) => void }) {
+    return (
+        <div className="inline-flex h-7 items-center gap-0 rounded-md border" style={chipStyle}>
+            <button
+                type="button"
+                className="flex h-full w-6 items-center justify-center opacity-70 transition hover:opacity-100 disabled:opacity-30"
+                disabled={value <= 1}
+                onClick={() => onChange(Math.max(1, value - 1))}
+            >
+                <Minus className="size-3" />
+            </button>
+            <span className="min-w-[1.75rem] text-center text-[11px] font-medium">{value}</span>
+            <button
+                type="button"
+                className="flex h-full w-6 items-center justify-center opacity-70 transition hover:opacity-100 disabled:opacity-30"
+                disabled={value >= 15}
+                onClick={() => onChange(Math.min(15, value + 1))}
+            >
+                <Plus className="size-3" />
+            </button>
+        </div>
+    );
 }

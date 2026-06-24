@@ -4,13 +4,15 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { BookOpen, Bot, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video, Workflow } from "lucide-react";
 import { saveAs } from "file-saver";
 
-import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
+import { requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { DOCS_URL } from "@/constant/env";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { getImageBlob, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, getMediaBlob, type UploadedFile } from "@/services/file-storage";
+import { backendWs, type TaskResult } from "@/services/backend-ws";
+import { submitImageGeneration, submitImageEdit, submitVideoGeneration, submitAudioGeneration, submitRunningHubTask, fileUrl, uploadFile, getTask } from "@/services/backend-task";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -39,7 +41,7 @@ import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
 import { CanvasRunningHubPanel } from "../components/canvas-runninghub-panel";
 import { executeRunningHubWorkflow, resumeRunningHubPoll, RunningHubTimeoutError } from "@/services/api/runninghub";
-import { RUNNINGHUB_DEFAULT_TIMEOUT_S, paramKey, type RunningHubParamValues } from "@/lib/runninghub";
+import { RUNNINGHUB_DEFAULT_TIMEOUT_S, buildNodeInfoList, paramKey, type RunningHubParamValues } from "@/lib/runninghub";
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
@@ -103,6 +105,42 @@ const NODE_STATUS_IDLE = "idle" as const;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
+
+type TaskWaitResult = { files: Array<{ fileId: string; url: string; mimeType: string; size: number }> };
+
+function submitTaskAndWait(
+    submitFn: () => Promise<{ taskId: string }>,
+    signal?: AbortSignal,
+): Promise<TaskWaitResult> {
+    return new Promise<TaskWaitResult>((resolve, reject) => {
+        if (signal?.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
+
+        submitFn().then((task) => {
+            const onAbort = () => { unsub(); reject(new DOMException("Aborted", "AbortError")); };
+            signal?.addEventListener("abort", onAbort, { once: true });
+            const unsub = backendWs.onTask(task.taskId, (msg) => {
+                if (msg.type === "task.status") return;
+                signal?.removeEventListener("abort", onAbort);
+                unsub();
+                if (msg.type === "task.completed" && msg.result) {
+                    resolve({ files: msg.result.files || [] });
+                } else {
+                    reject(new Error(msg.error || "任务失败"));
+                }
+            });
+        }).catch(reject);
+    });
+}
+
+function resolveChannelId(config: AiConfig): number | undefined {
+    const store = useConfigStore.getState();
+    const channels = config.channels;
+    const modelValue = config.model;
+    const decoded = modelValue.includes("::") ? { channelId: modelValue.slice(0, modelValue.indexOf("::")), model: modelValue.slice(modelValue.indexOf("::") + 2) } : null;
+    const channel = decoded ? channels.find((c) => c.id === decoded.channelId) : channels[0];
+    return channel ? store.getServerChannelId(channel.id) : undefined;
+}
+
 const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用于 AI 生图的提示词。
 
 要求：
@@ -330,6 +368,7 @@ function InfiniteCanvasPage() {
     const agentCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
+    const taskNodeMapRef = useRef(new Map<string, { nodeId: string; type: string }>());
 
     const createHistoryEntry = useCallback(
         (): CanvasHistoryEntry => ({
@@ -397,42 +436,97 @@ function InfiniteCanvasPage() {
     );
 
     useEffect(() => {
-        if (!hydrated) return;
-        setProjectLoaded(false);
-        const project = openProject(projectId);
-        if (!project) {
-            navigate("/canvas", { replace: true });
-            return;
-        }
-
-        const restore = async () => {
-            const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
-            const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
-            setNodes(restoredNodes);
-            setConnections(project.connections);
-            setChatSessions(restoredSessions);
-            setActiveChatId(project.activeChatId || null);
-            setBackgroundMode(project.backgroundMode);
-            setShowImageInfo(project.showImageInfo || false);
-            setViewport(project.viewport);
-            historyRef.current = { past: [], future: [] };
-            if (historyCommitTimerRef.current) {
-                clearTimeout(historyCommitTimerRef.current);
-                historyCommitTimerRef.current = null;
-            }
-            lastHistoryRef.current = {
-                nodes: restoredNodes,
-                connections: project.connections,
-                chatSessions: restoredSessions,
-                activeChatId: project.activeChatId || null,
-                backgroundMode: project.backgroundMode,
-                showImageInfo: project.showImageInfo || false,
+        if (!projectId) return;
+        let canceled = false;
+        useCanvasStore.getState().fetchProject(projectId).then((project) => {
+            if (canceled || !project) return;
+            const restore = async () => {
+                const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
+                const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
+                if (canceled) return;
+                setNodes(restoredNodes);
+                setConnections(project.connections);
+                setChatSessions(restoredSessions);
+                setActiveChatId(project.activeChatId || null);
+                setBackgroundMode(project.backgroundMode);
+                setShowImageInfo(project.showImageInfo || false);
+                setViewport(project.viewport);
+                historyRef.current = { past: [], future: [] };
+                if (historyCommitTimerRef.current) {
+                    clearTimeout(historyCommitTimerRef.current);
+                    historyCommitTimerRef.current = null;
+                }
+                lastHistoryRef.current = {
+                    nodes: restoredNodes,
+                    connections: project.connections,
+                    chatSessions: restoredSessions,
+                    activeChatId: project.activeChatId || null,
+                    backgroundMode: project.backgroundMode,
+                    showImageInfo: project.showImageInfo || false,
+                };
+                setHistoryState({ canUndo: false, canRedo: false });
+                setProjectLoaded(true);
             };
-            setHistoryState({ canUndo: false, canRedo: false });
-            setProjectLoaded(true);
-        };
-        void restore();
-    }, [hydrated, openProject, projectId, navigate]);
+            restore();
+        }).catch(() => {
+            if (!canceled) navigate("/canvas", { replace: true });
+        });
+        return () => { canceled = true; };
+    }, [projectId]);
+
+    useEffect(() => {
+        const unsub = backendWs.onAnyTask((msg) => {
+            if (!msg.taskId) return;
+            const entry = taskNodeMapRef.current.get(msg.taskId);
+            if (!entry) return;
+
+            if (msg.type === "task.status") {
+                setNodes((prev) =>
+                    prev.map((n) =>
+                        n.id === entry.nodeId ? { ...n, metadata: { ...n.metadata, progressText: msg.progressText, status: "loading" } } : n,
+                    ),
+                );
+            }
+
+            if (msg.type === "task.completed" && msg.result) {
+                taskNodeMapRef.current.delete(msg.taskId);
+                const files = msg.result.files || [];
+                if (files.length === 0) return;
+                const file = files[0];
+                const url = fileUrl(file.fileId);
+                setNodes((prev) =>
+                    prev.map((n) =>
+                        n.id === entry.nodeId
+                            ? {
+                                  ...n,
+                                  metadata: {
+                                      ...n.metadata,
+                                      content: url,
+                                      storageKey: file.fileId,
+                                      mimeType: file.mimeType,
+                                      bytes: file.size,
+                                      status: "success" as const,
+                                      progressText: undefined,
+                                  },
+                              }
+                            : n,
+                    ),
+                );
+            }
+
+            if (msg.type === "task.failed") {
+                taskNodeMapRef.current.delete(msg.taskId);
+                setNodes((prev) =>
+                    prev.map((n) =>
+                        n.id === entry.nodeId
+                            ? { ...n, metadata: { ...n.metadata, status: "error" as const, errorDetails: msg.error, progressText: undefined } }
+                            : n,
+                    ),
+                );
+            }
+        });
+        return unsub;
+    }, []);
 
     useEffect(() => {
         if (!projectLoaded || !["new", "recent", "choose"].includes(searchParams.get("mode") || "")) return;
@@ -597,7 +691,7 @@ function InfiniteCanvasPage() {
 
     const createConnectedNode = useCallback(
         (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.RunningHub, pending: PendingConnectionCreate) => {
-            const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
+            const metadata = type === CanvasNodeType.Config ? { generationMode: "text" as const, model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
             if (!connection) {
@@ -790,6 +884,7 @@ function InfiniteCanvasPage() {
             const configMetadata =
                 type === CanvasNodeType.Config
                     ? {
+                          generationMode: "text" as const,
                           model: effectiveConfig.imageModel || effectiveConfig.model,
                           size: effectiveConfig.size,
                           count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
@@ -1729,8 +1824,18 @@ function InfiniteCanvasPage() {
             setDialogNodeId(childId);
             const controller = startGenerationRequest(childId, node.id, childId);
             try {
-                const image = await requestEdit(generationConfig, prompt, [source], { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl }, { signal: controller.signal }).then((items) => items[0]);
-                const uploaded = await uploadImage(image.dataUrl);
+                const channelId = resolveChannelId(generationConfig);
+                const modelName = generationConfig.model.includes("::") ? generationConfig.model.split("::").pop()! : generationConfig.model;
+                const refFileIds = source.storageKey ? [source.storageKey] : [];
+                const maskFileId = payload.maskDataUrl ? (await uploadFile(await (await fetch(payload.maskDataUrl)).blob(), "mask.png")).fileId : undefined;
+                const result = await submitTaskAndWait(
+                    () => submitImageEdit({ channelId, model: modelName, prompt, n: 1, quality: generationConfig.quality, size: generationConfig.size, refFileIds, maskFileId }),
+                    controller.signal,
+                );
+                const file = result.files[0];
+                if (!file) throw new Error("未返回生成结果");
+                const url = fileUrl(file.fileId);
+                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: node.width, height: node.height, bytes: file.size, mimeType: file.mimeType };
                 const size = fitNodeSize(uploaded.width, uploaded.height, node.width, node.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
             } catch (error) {
@@ -1805,10 +1910,17 @@ function InfiniteCanvasPage() {
             setDialogNodeId(childId);
             const controller = startGenerationRequest(childId, node.id, childId);
             try {
-                const image = await requestEdit(generationConfig, prompt, [{ id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey }], undefined, { signal: controller.signal }).then(
-                    (items) => items[0],
+                const channelId = resolveChannelId(generationConfig);
+                const modelName = generationConfig.model.includes("::") ? generationConfig.model.split("::").pop()! : generationConfig.model;
+                const refFileIds = node.metadata.storageKey ? [node.metadata.storageKey] : [];
+                const result = await submitTaskAndWait(
+                    () => submitImageEdit({ channelId, model: modelName, prompt, n: 1, quality: generationConfig.quality, size: generationConfig.size, refFileIds }),
+                    controller.signal,
                 );
-                const uploaded = await uploadImage(image.dataUrl);
+                const file = result.files[0];
+                if (!file) throw new Error("未返回生成结果");
+                const url = fileUrl(file.fileId);
+                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: imageConfig.width, height: imageConfig.height, bytes: file.size, mimeType: file.mimeType };
                 const size = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
             } catch (error) {
@@ -2086,10 +2198,19 @@ function InfiniteCanvasPage() {
                     await Promise.all(
                         targetIds.map(async (targetId) => {
                             try {
-                                const image = referenceImages.length
-                                    ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, referenceImages, undefined, { signal: controller.signal }).then((items) => items[0])
-                                    : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: controller.signal }).then((items) => items[0]);
-                                const uploaded = await uploadImage(image.dataUrl);
+                                const channelId = resolveChannelId(generationConfig);
+                                const modelName = generationConfig.model.includes("::") ? generationConfig.model.split("::").pop()! : generationConfig.model;
+                                const refFileIds = referenceImages.length ? referenceImages.map((img) => img.storageKey).filter((k): k is string => Boolean(k)) : undefined;
+                                const result = await submitTaskAndWait(
+                                    () => referenceImages.length
+                                        ? submitImageEdit({ channelId, model: modelName, prompt: effectivePrompt, n: 1, quality: generationConfig.quality, size: generationConfig.size, refFileIds })
+                                        : submitImageGeneration({ channelId, model: modelName, prompt: effectivePrompt, n: 1, quality: generationConfig.quality, size: generationConfig.size }),
+                                    controller.signal,
+                                );
+                                const file = result.files[0];
+                                if (!file) throw new Error("未返回生成结果");
+                                const url = fileUrl(file.fileId);
+                                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: imageConfig.width, height: imageConfig.height, bytes: file.size, mimeType: file.mimeType };
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                                 setNodes((prev) => {
                                     const root = prev.find((node) => node.id === rootId);
@@ -2168,7 +2289,17 @@ function InfiniteCanvasPage() {
                     if (!isEmptyVideoNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
                     const controller = startGenerationRequest(videoId, nodeId, nodeId, runController);
                     try {
-                        const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, { signal: controller.signal }));
+                        const channelId = resolveChannelId(generationConfig);
+                        const modelName = generationConfig.model.includes("::") ? generationConfig.model.split("::").pop()! : generationConfig.model;
+                        const refFileIds = [...generationContext.referenceImages, ...generationContext.referenceVideos].map((r) => r.storageKey).filter((k): k is string => Boolean(k));
+                        const result = await submitTaskAndWait(
+                            () => submitVideoGeneration({ channelId, model: modelName, prompt: effectivePrompt, refFileIds: refFileIds.length ? refFileIds : undefined, seconds: Number(generationConfig.videoSeconds) || 6, quality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio === "true", watermark: generationConfig.videoWatermark === "true" }),
+                            controller.signal,
+                        );
+                        const file = result.files[0];
+                        if (!file) throw new Error("未返回生成结果");
+                        const url = fileUrl(file.fileId);
+                        const video: UploadedFile = { url, storageKey: file.fileId, bytes: file.size, mimeType: file.mimeType, width: spec.width, height: spec.height };
                         const videoSize = fitNodeSize(video.width || spec.width, video.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                         setNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, width: videoSize.width, height: videoSize.height, position: { x: node.position.x + node.width / 2 - videoSize.width / 2, y: node.position.y + node.height / 2 - videoSize.height / 2 }, metadata: { ...node.metadata, ...videoMetadata(video), prompt: effectivePrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, references: generationReferenceUrls(generationContext) } } : node)));
                     } finally {
@@ -2196,7 +2327,16 @@ function InfiniteCanvasPage() {
                     if (!isEmptyAudioNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: audioId }]);
                     const controller = startGenerationRequest(audioId, nodeId, nodeId, runController);
                     try {
-                        const audio = await storeGeneratedAudio(await requestAudioGeneration(generationConfig, effectivePrompt, { signal: controller.signal }), generationConfig.audioFormat);
+                        const channelId = resolveChannelId(generationConfig);
+                        const modelName = generationConfig.model.includes("::") ? generationConfig.model.split("::").pop()! : generationConfig.model;
+                        const result = await submitTaskAndWait(
+                            () => submitAudioGeneration({ channelId, model: modelName, prompt: effectivePrompt, voice: generationConfig.audioVoice, format: generationConfig.audioFormat, speed: Number(generationConfig.audioSpeed) || 1, instructions: generationConfig.audioInstructions }),
+                            controller.signal,
+                        );
+                        const file = result.files[0];
+                        if (!file) throw new Error("未返回生成结果");
+                        const url = fileUrl(file.fileId);
+                        const audio: UploadedFile = { url, storageKey: file.fileId, bytes: file.size, mimeType: file.mimeType };
                         setNodes((prev) => prev.map((node) => (node.id === audioId ? { ...node, metadata: { ...node.metadata, ...audioMetadata(audio), prompt: effectivePrompt, ...buildAudioGenerationMetadata(generationConfig) } } : node)));
                     } finally {
                         finishGenerationRequest(audioId, controller);
@@ -2331,19 +2471,31 @@ function InfiniteCanvasPage() {
                 const videoMapping = resolveUpstreamMapping(videoParamsSorted, stored, upstreamVideoItems);
                 for (const [key, blob] of videoMapping) mediaBlobs.set(key, blob);
 
-                const values: RunningHubParamValues = { texts, images: {}, videos: {}, booleans };
-                const results = await executeRunningHubWorkflow(
-                    effectiveConfig.runninghubApiKey,
-                    workflow,
-                    values,
-                    mediaBlobs,
-                    node.metadata?.runninghubTimeout || RUNNINGHUB_DEFAULT_TIMEOUT_S,
-                    (_status, detail) => {
-                        setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, runninghubStatus: detail || _status } } : n)));
-                    },
-                    { signal: abortController.signal },
+                const mediaFileIds: Record<string, string> = {};
+                const images: Record<string, string> = {};
+                const videos: Record<string, string> = {};
+                for (const [key, blob] of mediaBlobs) {
+                    const uploaded = await uploadFile(blob, "media.bin");
+                    mediaFileIds[key] = uploaded.fileId;
+                    if (imageMapping.has(key)) images[key] = "__media__";
+                    else videos[key] = "__media__";
+                }
+
+                const values: RunningHubParamValues = { texts, images, videos, booleans };
+                const nodeInfoList = buildNodeInfoList(workflow, values);
+                const result = await submitTaskAndWait(
+                    () => submitRunningHubTask({ workflowId: workflow.workflowId, nodeInfoList, mediaFileIds }),
+                    abortController.signal,
                 );
-                createRunningHubOutputNodes(nodeId, results);
+                const rhResults = result.files.map((f) => ({
+                    type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
+                    id: nanoid(),
+                    url: fileUrl(f.fileId),
+                    storageKey: f.fileId,
+                    bytes: f.size,
+                    mimeType: f.mimeType,
+                }));
+                createRunningHubOutputNodes(nodeId, rhResults);
                 setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, runninghubStatus: undefined, runninghubTaskId: undefined } } : n)));
             } catch (error) {
                 if (error instanceof RunningHubTimeoutError) {
@@ -2371,16 +2523,19 @@ function InfiniteCanvasPage() {
             setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, runninghubLastError: undefined, runninghubStatus: "恢复查询..." } } : n)));
 
             try {
-                const results = await resumeRunningHubPoll(
-                    effectiveConfig.runninghubApiKey,
-                    taskId,
-                    node?.metadata?.runninghubTimeout || RUNNINGHUB_DEFAULT_TIMEOUT_S,
-                    (_status, detail) => {
-                        setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, runninghubStatus: detail || _status } } : n)));
-                    },
-                    { signal: abortController.signal },
+                const result = await submitTaskAndWait(
+                    () => submitRunningHubTask({ workflowId: taskId }),
+                    abortController.signal,
                 );
-                createRunningHubOutputNodes(nodeId, results);
+                const rhResults = result.files.map((f) => ({
+                    type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
+                    id: nanoid(),
+                    url: fileUrl(f.fileId),
+                    storageKey: f.fileId,
+                    bytes: f.size,
+                    mimeType: f.mimeType,
+                }));
+                createRunningHubOutputNodes(nodeId, rhResults);
                 setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, runninghubStatus: undefined, runninghubTaskId: undefined } } : n)));
             } catch (error) {
                 if (error instanceof RunningHubTimeoutError) {
@@ -2397,7 +2552,7 @@ function InfiniteCanvasPage() {
         [effectiveConfig, startGenerationRequest, finishGenerationRequest],
     );
 
-    const createRunningHubOutputNodes = useCallback((sourceNodeId: string, results: Awaited<ReturnType<typeof executeRunningHubWorkflow>>) => {
+    const createRunningHubOutputNodes = useCallback((sourceNodeId: string, results: Array<{ type: "image" | "video" | "text" | "audio"; id: string; url?: string; dataUrl?: string; storageKey?: string; width?: number; height?: number; bytes?: number; mimeType?: string; durationMs?: number; text?: string }>) => {
         const sourceNode = nodesRef.current.find((n) => n.id === sourceNodeId);
         if (!sourceNode || !results.length) return;
 
@@ -2407,6 +2562,7 @@ function InfiniteCanvasPage() {
         const newConnections: CanvasConnection[] = [];
 
         for (const result of results) {
+            const contentUrl = result.url || result.dataUrl || (result.storageKey ? fileUrl(result.storageKey) : "");
             if (result.type === "image") {
                 const width = 340;
                 const height = result.width && result.height ? Math.round((width * result.height) / result.width) : 240;
@@ -2417,7 +2573,7 @@ function InfiniteCanvasPage() {
                     position: { x: offsetX, y: offsetY },
                     width,
                     height,
-                    metadata: { content: result.dataUrl, status: "success", storageKey: result.storageKey, naturalWidth: result.width, naturalHeight: result.height, bytes: result.bytes, mimeType: result.mimeType },
+                    metadata: { content: contentUrl, status: "success", storageKey: result.storageKey, naturalWidth: result.width, naturalHeight: result.height, bytes: result.bytes, mimeType: result.mimeType },
                 });
                 offsetY += height + 40;
             } else if (result.type === "video") {
@@ -2430,7 +2586,7 @@ function InfiniteCanvasPage() {
                     position: { x: offsetX, y: offsetY },
                     width,
                     height,
-                    metadata: { content: result.url, status: "success", storageKey: result.storageKey, naturalWidth: result.width, naturalHeight: result.height, bytes: result.bytes, mimeType: result.mimeType, durationMs: result.durationMs },
+                    metadata: { content: contentUrl, status: "success", storageKey: result.storageKey, naturalWidth: result.width, naturalHeight: result.height, bytes: result.bytes, mimeType: result.mimeType, durationMs: result.durationMs },
                 });
                 offsetY += height + 40;
             } else if (result.type === "text" && result.text) {
@@ -2509,19 +2665,49 @@ function InfiniteCanvasPage() {
                     return;
                 }
                 if (node.type === CanvasNodeType.Video) {
-                    const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, prompt, retryImages, context?.referenceVideos || [], context?.referenceAudios || [], { signal: controller.signal }));
+                    const channelId = resolveChannelId(generationConfig);
+                    const modelName = generationConfig.model.includes("::") ? generationConfig.model.split("::").pop()! : generationConfig.model;
+                    const refFileIds = [...retryImages, ...(context?.referenceVideos || [])].map((r) => r.storageKey).filter((k): k is string => Boolean(k));
+                    const result = await submitTaskAndWait(
+                        () => submitVideoGeneration({ channelId, model: modelName, prompt, refFileIds: refFileIds.length ? refFileIds : undefined, seconds: Number(generationConfig.videoSeconds) || 6, quality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio === "true", watermark: generationConfig.videoWatermark === "true" }),
+                        controller.signal,
+                    );
+                    const file = result.files[0];
+                    if (!file) throw new Error("未返回生成结果");
+                    const url = fileUrl(file.fileId);
+                    const video: UploadedFile = { url, storageKey: file.fileId, bytes: file.size, mimeType: file.mimeType, width: node.width, height: node.height };
                     const videoSize = fitNodeSize(video.width || node.width, video.height || node.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                     setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, width: videoSize.width, height: videoSize.height, position: { x: item.position.x + item.width / 2 - videoSize.width / 2, y: item.position.y + item.height / 2 - videoSize.height / 2 }, metadata: { ...item.metadata, ...videoMetadata(video), prompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark } } : item)));
                     return;
                 }
                 if (node.type === CanvasNodeType.Audio) {
-                    const audio = await storeGeneratedAudio(await requestAudioGeneration(generationConfig, prompt, { signal: controller.signal }), generationConfig.audioFormat);
+                    const channelId = resolveChannelId(generationConfig);
+                    const modelName = generationConfig.model.includes("::") ? generationConfig.model.split("::").pop()! : generationConfig.model;
+                    const result = await submitTaskAndWait(
+                        () => submitAudioGeneration({ channelId, model: modelName, prompt, voice: generationConfig.audioVoice, format: generationConfig.audioFormat, speed: Number(generationConfig.audioSpeed) || 1, instructions: generationConfig.audioInstructions }),
+                        controller.signal,
+                    );
+                    const file = result.files[0];
+                    if (!file) throw new Error("未返回生成结果");
+                    const url = fileUrl(file.fileId);
+                    const audio: UploadedFile = { url, storageKey: file.fileId, bytes: file.size, mimeType: file.mimeType };
                     setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, ...audioMetadata(audio), prompt, ...buildAudioGenerationMetadata(generationConfig) } } : item)));
                     return;
                 }
 
-                const image = useReferenceImages ? await requestEdit(generationConfig, prompt, retryImages, undefined, { signal: controller.signal }).then((items) => items[0]) : await requestGeneration(generationConfig, prompt, { signal: controller.signal }).then((items) => items[0]);
-                const uploadedImage = await uploadImage(image.dataUrl);
+                const channelId = resolveChannelId(generationConfig);
+                const modelName = generationConfig.model.includes("::") ? generationConfig.model.split("::").pop()! : generationConfig.model;
+                const refFileIds = useReferenceImages ? retryImages.map((img) => img.storageKey).filter((k): k is string => Boolean(k)) : undefined;
+                const imgResult = await submitTaskAndWait(
+                    () => useReferenceImages
+                        ? submitImageEdit({ channelId, model: modelName, prompt, n: 1, quality: generationConfig.quality, size: generationConfig.size, refFileIds })
+                        : submitImageGeneration({ channelId, model: modelName, prompt, n: 1, quality: generationConfig.quality, size: generationConfig.size }),
+                    controller.signal,
+                );
+                const imgFile = imgResult.files[0];
+                if (!imgFile) throw new Error("未返回生成结果");
+                const imgUrl = fileUrl(imgFile.fileId);
+                const uploadedImage: UploadedImage = { url: imgUrl, storageKey: imgFile.fileId, width: node.width, height: node.height, bytes: imgFile.size, mimeType: imgFile.mimeType };
                 const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                 const imageSize = fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
                 const generationMetadata = savedImageMetadata?.generationType
@@ -2557,7 +2743,7 @@ function InfiniteCanvasPage() {
         (node: CanvasNodeData) => {
             const prompt = (node.metadata?.content || node.metadata?.prompt || "").trim();
             if (!prompt) {
-                message.warning("文本节点为空，无法生图");
+                message.warning("文本节点为空，无法生成");
                 return;
             }
             const sourceNode = nodesRef.current.find((item) => item.id === node.id);
@@ -2571,8 +2757,8 @@ function InfiniteCanvasPage() {
                 },
                 {
                     prompt: "",
-                    model: effectiveConfig.imageModel || effectiveConfig.model,
-                    size: effectiveConfig.size,
+                    generationMode: "text",
+                    model: effectiveConfig.textModel || effectiveConfig.model,
                     count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
                 },
             );
@@ -3375,7 +3561,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         audioFormat: node?.metadata?.audioFormat || config.audioFormat || defaultConfig.audioFormat,
         audioSpeed: node?.metadata?.audioSpeed || config.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node?.metadata?.audioInstructions || config.audioInstructions || defaultConfig.audioInstructions,
-        count: String(node?.metadata?.count || (mode === "image" ? config.canvasImageCount || config.count : config.count) || defaultConfig.count),
+        count: String(node?.metadata?.count || config.canvasImageCount || config.count || defaultConfig.count),
     };
 }
 

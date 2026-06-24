@@ -31,8 +31,13 @@ function CanvasPageInner() {
     const projects = useCanvasStore((state) => state.projects);
     const createProject = useCanvasStore((state) => state.createProject);
     const importProject = useCanvasStore((state) => state.importProject);
+    const fetchProjects = useCanvasStore((state) => state.fetchProjects);
     const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
+
+    useEffect(() => {
+        fetchProjects();
+    }, [fetchProjects]);
 
     const mode = searchParams.get("mode");
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";

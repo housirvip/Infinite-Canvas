@@ -1,16 +1,17 @@
 import { create } from "zustand";
-import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 
 import { nanoid } from "nanoid";
-import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "../types";
+import * as projectApi from "@/services/backend-project";
 
 export type CanvasProject = {
     id: string;
     title: string;
     createdAt: string;
     updatedAt: string;
+    nodeCount?: number;
+    connectionCount?: number;
     nodes: CanvasNodeData[];
     connections: CanvasConnection[];
     chatSessions: CanvasAssistantSession[];
@@ -30,105 +31,181 @@ type CanvasStore = {
     deleteProjects: (ids: string[]) => void;
     replaceProjects: (projects: CanvasProject[]) => void;
     updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
+    fetchProjects: () => Promise<void>;
+    fetchProject: (id: string) => Promise<CanvasProject | null>;
 };
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
-const CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
-type PersistedCanvasState = Pick<CanvasStore, "projects">;
+
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let queuedPersistState: PersistedCanvasState | null = null;
+let pendingSaves = new Map<string, Record<string, any>>();
 
-const canvasStorage: PersistStorage<CanvasStore> = {
-    getItem: async (name) => {
-        const value = await localForageStorage.getItem(name);
-        if (!value) return null;
-        const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
-        queuedPersistState = parsed.state as PersistedCanvasState;
-        return parsed;
-    },
-    setItem: (name, value) => {
-        const nextState = value.state as PersistedCanvasState;
-        if (queuedPersistState && queuedPersistState.projects === nextState.projects) return;
-        queuedPersistState = nextState;
-        if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => {
-            saveTimer = null;
-            void localForageStorage.setItem(name, JSON.stringify(value));
-        }, 400);
-    },
-    removeItem: (name) => localForageStorage.removeItem(name),
-};
+function debouncedSave(projectId: string, patch: Record<string, any>) {
+    const existing = pendingSaves.get(projectId) || {};
+    pendingSaves.set(projectId, { ...existing, ...patch });
 
-export const useCanvasStore = create<CanvasStore>()(
-    persist(
-        (set, get) => ({
-            hydrated: false,
-            projects: [],
-            createProject: (title = "未命名画布") => {
-                const now = new Date().toISOString();
-                const id = nanoid();
-                const project: CanvasProject = {
-                    id,
-                    title,
-                    createdAt: now,
-                    updatedAt: now,
-                    nodes: [],
-                    connections: [],
-                    chatSessions: [],
-                    activeChatId: null,
-                    backgroundMode: "lines",
-                    showImageInfo: false,
-                    viewport: initialViewport,
-                };
-                set((state) => ({ projects: [project, ...state.projects] }));
-                return id;
-            },
-            importProject: (source) => {
-                const now = new Date().toISOString();
-                const project: CanvasProject = {
-                    id: nanoid(),
-                    title: source.title || "导入画布",
-                    createdAt: source.createdAt || now,
-                    updatedAt: now,
-                    nodes: source.nodes || [],
-                    connections: source.connections || [],
-                    chatSessions: source.chatSessions || [],
-                    activeChatId: source.activeChatId || null,
-                    backgroundMode: source.backgroundMode || "lines",
-                    showImageInfo: source.showImageInfo || false,
-                    viewport: source.viewport || initialViewport,
-                };
-                set((state) => ({ projects: [project, ...state.projects] }));
-                return project.id;
-            },
-            openProject: (id) => {
-                return get().projects.find((item) => item.id === id) || null;
-            },
-            renameProject: (id, title) =>
-                set((state) => ({
-                    projects: state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project)),
-                })),
-            deleteProjects: (ids) =>
-                set((state) => {
-                    const projects = state.projects.filter((project) => !ids.includes(project.id));
-                    return { projects };
-                }),
-            replaceProjects: (projects) => set({ projects }),
-            updateProject: (id, patch) =>
-                set((state) => ({
-                    projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
-                })),
-        }),
-        {
-            name: CANVAS_STORE_KEY,
-            storage: canvasStorage,
-            partialize: (state) =>
-                ({
-                    projects: state.projects,
-                }) as StorageValue<CanvasStore>["state"],
-            onRehydrateStorage: () => () => {
-                useCanvasStore.setState({ hydrated: true });
-            },
-        },
-    ),
-);
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+        saveTimer = null;
+        const saves = new Map(pendingSaves);
+        pendingSaves.clear();
+        saves.forEach((data, id) => {
+            projectApi.updateProject(id, data).catch((err) => console.error("[canvas-save] update failed:", id, err?.response?.status, err?.response?.data || err.message));
+        });
+    }, 400);
+}
+
+export const useCanvasStore = create<CanvasStore>()((set, get) => ({
+    hydrated: false,
+    projects: [],
+
+    fetchProjects: async () => {
+        try {
+            const { projects: items } = await projectApi.listProjects(1, 100);
+            const projects: CanvasProject[] = items.map((item) => ({
+                id: item.projectId,
+                title: item.title,
+                createdAt: item.createdAt,
+                updatedAt: item.updatedAt,
+                nodeCount: item.nodeCount || 0,
+                connectionCount: item.connectionCount || 0,
+                nodes: [],
+                connections: [],
+                chatSessions: [],
+                activeChatId: null,
+                backgroundMode: (item.backgroundMode || "lines") as CanvasBackgroundMode,
+                showImageInfo: false,
+                viewport: initialViewport,
+            }));
+            set({ projects, hydrated: true });
+        } catch {
+            set({ hydrated: true });
+        }
+    },
+
+    fetchProject: async (id) => {
+        try {
+            const full = await projectApi.getProject(id);
+            const project: CanvasProject = {
+                id: full.projectId,
+                title: full.title,
+                createdAt: full.createdAt,
+                updatedAt: full.updatedAt,
+                nodes: full.nodes || [],
+                connections: full.connections || [],
+                chatSessions: full.chatSessions || [],
+                activeChatId: full.activeChatId || null,
+                backgroundMode: (full.backgroundMode || "lines") as CanvasBackgroundMode,
+                showImageInfo: full.showImageInfo,
+                viewport: { x: full.viewportX, y: full.viewportY, k: full.viewportK || 1 },
+            };
+            set((state) => ({
+                hydrated: true,
+                projects: state.projects.some((p) => p.id === id)
+                    ? state.projects.map((p) => (p.id === id ? project : p))
+                    : [project, ...state.projects],
+            }));
+            return project;
+        } catch {
+            set({ hydrated: true });
+            return null;
+        }
+    },
+
+    createProject: (title = "未命名画布") => {
+        const now = new Date().toISOString();
+        const id = nanoid();
+        const project: CanvasProject = {
+            id,
+            title,
+            createdAt: now,
+            updatedAt: now,
+            nodes: [],
+            connections: [],
+            chatSessions: [],
+            activeChatId: null,
+            backgroundMode: "lines",
+            showImageInfo: false,
+            viewport: initialViewport,
+        };
+        set((state) => ({ projects: [project, ...state.projects] }));
+        projectApi.createProject({
+            projectId: id,
+            title,
+            backgroundMode: "lines",
+        }).catch((err) => console.error("[canvas-save] create failed:", id, err?.response?.status, err?.response?.data || err.message));
+        return id;
+    },
+
+    importProject: (source) => {
+        const now = new Date().toISOString();
+        const id = nanoid();
+        const project: CanvasProject = {
+            id,
+            title: source.title || "导入画布",
+            createdAt: source.createdAt || now,
+            updatedAt: now,
+            nodes: source.nodes || [],
+            connections: source.connections || [],
+            chatSessions: source.chatSessions || [],
+            activeChatId: source.activeChatId || null,
+            backgroundMode: source.backgroundMode || "lines",
+            showImageInfo: source.showImageInfo || false,
+            viewport: source.viewport || initialViewport,
+        };
+        set((state) => ({ projects: [project, ...state.projects] }));
+        projectApi.createProject({
+            projectId: id,
+            title: project.title,
+            backgroundMode: project.backgroundMode,
+            showImageInfo: project.showImageInfo,
+            viewportX: project.viewport.x,
+            viewportY: project.viewport.y,
+            viewportK: project.viewport.k,
+            activeChatId: project.activeChatId || undefined,
+            nodes: project.nodes,
+            connections: project.connections,
+            chatSessions: project.chatSessions,
+        }).catch((err) => console.error("[canvas-save] import failed:", id, err?.response?.status, err?.response?.data || err.message));
+        return id;
+    },
+
+    openProject: (id) => {
+        return get().projects.find((item) => item.id === id) || null;
+    },
+
+    renameProject: (id, title) => {
+        set((state) => ({
+            projects: state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project)),
+        }));
+        debouncedSave(id, { title: title.trim() });
+    },
+
+    deleteProjects: (ids) => {
+        set((state) => ({
+            projects: state.projects.filter((project) => !ids.includes(project.id)),
+        }));
+        ids.forEach((id) => projectApi.deleteProject(id).catch((err) => console.error("[canvas-save] delete failed:", id, err?.response?.status, err?.response?.data || err.message)));
+    },
+
+    replaceProjects: (projects) => set({ projects }),
+
+    updateProject: (id, patch) => {
+        set((state) => ({
+            projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
+        }));
+        const savePatch: Record<string, any> = {};
+        if (patch.nodes) savePatch.nodes = patch.nodes;
+        if (patch.connections) savePatch.connections = patch.connections;
+        if (patch.chatSessions) savePatch.chatSessions = patch.chatSessions;
+        if (patch.activeChatId !== undefined) savePatch.activeChatId = patch.activeChatId;
+        if (patch.backgroundMode) savePatch.backgroundMode = patch.backgroundMode;
+        if (patch.showImageInfo !== undefined) savePatch.showImageInfo = patch.showImageInfo;
+        if (patch.viewport) {
+            savePatch.viewportX = patch.viewport.x;
+            savePatch.viewportY = patch.viewport.y;
+            savePatch.viewportK = patch.viewport.k;
+        }
+        debouncedSave(id, savePatch);
+    },
+}));

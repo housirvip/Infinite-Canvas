@@ -111,7 +111,6 @@ export const CanvasNode = React.memo(function CanvasNode({
     const isBatchRoot = data.type === CanvasNodeType.Image && Boolean(data.metadata?.isBatchRoot) && batchCount > 1;
     const isBatchChild = data.type === CanvasNodeType.Image && Boolean(data.metadata?.batchRootId);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
-    const imageBorderColor = isActive ? selectionBlue : isRelated && !isBatchChild ? theme.node.muted : "transparent";
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const resizeRef = useRef({
         isResizing: false,
@@ -259,8 +258,8 @@ export const CanvasNode = React.memo(function CanvasNode({
             <div
                 className="relative h-full w-full overflow-visible rounded-3xl border-2"
                 style={{
-                    background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
-                    borderColor: hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : theme.node.stroke,
+                    background: hasVideoContent ? "transparent" : theme.node.fill,
+                    borderColor: isActive ? selectionBlue : isRelated ? theme.node.muted : theme.node.stroke,
                     boxShadow: isActive ? `0 0 0 1px ${selectionBlue}55` : isRelated && !isBatchChild ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)` : undefined,
                 }}
                 onMouseDown={(event) => onMouseDown(event, data.id)}
@@ -284,7 +283,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={
                         {
-                            background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
+                            background: hasVideoContent ? "transparent" : theme.node.fill,
                             "--batch-from-x": `${batchMotion?.x || 0}px`,
                             "--batch-from-y": `${batchMotion?.y || 0}px`,
                             "--batch-from-rotate": `${6 + (batchMotion?.index || 0) * 4}deg`,
@@ -337,7 +336,12 @@ function NodeContent(props: NodeContentRendererProps) {
     if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (props.node.type === CanvasNodeType.RunningHub) return <RunningHubNodeContent {...props} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
-    if (props.node.metadata?.status === "loading") return <LoadingContent theme={props.theme} />;
+    if (props.node.metadata?.status === "loading") {
+        if (props.node.type === CanvasNodeType.Text && props.node.metadata?.content) {
+            return <StreamingTextContent node={props.node} theme={props.theme} />;
+        }
+        return <LoadingContent theme={props.theme} progressText={props.node.metadata?.progressText} />;
+    }
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} />;
 
     const Renderer = nodeContentRenderers[props.node.type];
@@ -353,11 +357,27 @@ const nodeContentRenderers = {
     [CanvasNodeType.RunningHub]: RunningHubNodeContent,
 } satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
 
-function LoadingContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
+function LoadingContent({ theme, progressText }: Pick<NodeContentRendererProps, "theme"> & { progressText?: string }) {
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
             <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
-            <span className="text-[10px] tracking-[0.2em]">生成中</span>
+            <span className="text-[10px] tracking-[0.2em]">{progressText || "生成中"}</span>
+        </div>
+    );
+}
+
+function StreamingTextContent({ node, theme }: Pick<NodeContentRendererProps, "node" | "theme">) {
+    const fontSize = node.metadata?.fontSize || 14;
+    return (
+        <div className="flex h-full w-full flex-col overflow-hidden pt-8">
+            <div
+                className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono"
+                style={{ fontSize: `${fontSize}px`, lineHeight: `${Math.round(fontSize * 1.65)}px`, color: theme.node.text }}
+                onWheel={(event) => event.stopPropagation()}
+            >
+                {node.metadata?.content}
+                <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse align-middle" style={{ backgroundColor: theme.node.activeStroke }} />
+            </div>
         </div>
     );
 }
@@ -407,11 +427,11 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
-                title="用文本生图"
-                aria-label="用文本生图"
+                title="AIGC"
+                aria-label="AIGC"
             >
                 <ImageIcon className="size-3.5" />
-                生图
+                AIGC
             </button>
             {isEditingContent ? (
                 <CanvasResourceMentionTextarea

@@ -6,18 +6,15 @@ import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from 
 import type { Asset } from "@/stores/use-asset-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { WebdavSyncConfig } from "@/stores/use-config-store";
-import { useConfigStore } from "@/stores/use-config-store";
-import type { RunningHubWorkflow } from "@/lib/runninghub";
 import type { CanvasProject } from "@/app/(user)/canvas/stores/use-canvas-store";
 import { useCanvasStore } from "@/app/(user)/canvas/stores/use-canvas-store";
 
 type StoredLog = Record<string, unknown> & { id?: string };
-export type AppSyncDomainKey = "canvas" | "assets" | "image-workbench" | "video-workbench" | "settings";
+export type AppSyncDomainKey = "canvas" | "assets" | "image-workbench" | "video-workbench";
 type DomainKey = AppSyncDomainKey;
 type CanvasDomainData = { projects: CanvasProject[] };
 type AssetDomainData = { assets: Asset[] };
 type LogDomainData = { logs: StoredLog[] };
-type SettingsDomainData = { runninghubApiKey: string; runninghubWorkflows: RunningHubWorkflow[] };
 
 type AppSyncFile = {
     storageKey: string;
@@ -87,7 +84,7 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
     emitProgress(onProgress, { stage: "等待本地数据加载" });
     await Promise.all([waitForHydration(useCanvasStore), waitForHydration(useAssetStore)]);
 
-    const [canvas, assets, imageLogs, videoLogs, settings] = await Promise.all([
+    const [canvas, assets, imageLogs, videoLogs] = await Promise.all([
         syncDomain<CanvasDomainData>(config, onProgress, {
             key: "canvas",
             label: "画布",
@@ -120,37 +117,19 @@ export async function syncAppDataToWebdav(config: WebdavSyncConfig, onProgress?:
             mergeData: (local, remote) => ({ logs: mergeById(local.logs, remote.logs, "createdAt") }),
             applyData: async (data) => replaceStoredLogs(videoLogStore, data.logs),
         }),
-        syncDomain<SettingsDomainData>(config, onProgress, {
-            key: "settings",
-            label: "配置",
-            emptyData: { runninghubApiKey: "", runninghubWorkflows: [] },
-            localData: async () => {
-                const c = useConfigStore.getState().config;
-                return { runninghubApiKey: c.runninghubApiKey, runninghubWorkflows: c.runninghubWorkflows };
-            },
-            mergeData: (local, remote) => ({
-                runninghubApiKey: remote.runninghubApiKey || local.runninghubApiKey,
-                runninghubWorkflows: mergeById(local.runninghubWorkflows, remote.runninghubWorkflows, "id"),
-            }),
-            applyData: async (data) => {
-                const store = useConfigStore.getState();
-                if (data.runninghubApiKey) store.updateConfig("runninghubApiKey", data.runninghubApiKey);
-                if (Array.isArray(data.runninghubWorkflows) && data.runninghubWorkflows.length) store.updateConfig("runninghubWorkflows", data.runninghubWorkflows);
-            },
-        }),
     ]);
 
     const result = {
         syncedAt: new Date().toISOString(),
-        mergedRemote: [canvas, assets, imageLogs, videoLogs, settings].some((item) => item.mergedRemote),
+        mergedRemote: [canvas, assets, imageLogs, videoLogs].some((item) => item.mergedRemote),
         projects: canvas.data.projects.length,
         assets: assets.data.assets.length,
         imageLogs: imageLogs.data.logs.length,
         videoLogs: videoLogs.data.logs.length,
-        files: canvas.files + assets.files + imageLogs.files + videoLogs.files + settings.files,
-        manifestBytes: canvas.manifestBytes + assets.manifestBytes + imageLogs.manifestBytes + videoLogs.manifestBytes + settings.manifestBytes,
-        uploadedFiles: canvas.uploadedFiles + assets.uploadedFiles + imageLogs.uploadedFiles + videoLogs.uploadedFiles + settings.uploadedFiles,
-        uploadedBytes: canvas.uploadedBytes + assets.uploadedBytes + imageLogs.uploadedBytes + videoLogs.uploadedBytes + settings.uploadedBytes,
+        files: canvas.files + assets.files + imageLogs.files + videoLogs.files,
+        manifestBytes: canvas.manifestBytes + assets.manifestBytes + imageLogs.manifestBytes + videoLogs.manifestBytes,
+        uploadedFiles: canvas.uploadedFiles + assets.uploadedFiles + imageLogs.uploadedFiles + videoLogs.uploadedFiles,
+        uploadedBytes: canvas.uploadedBytes + assets.uploadedBytes + imageLogs.uploadedBytes + videoLogs.uploadedBytes,
     };
     emitProgress(onProgress, { stage: "同步完成", status: "success" });
     return result;
@@ -346,7 +325,6 @@ function domainLabel(domain: DomainKey) {
     if (domain === "canvas") return "画布";
     if (domain === "assets") return "我的素材";
     if (domain === "image-workbench") return "生图工作台";
-    if (domain === "settings") return "配置";
     return "视频创作台";
 }
 

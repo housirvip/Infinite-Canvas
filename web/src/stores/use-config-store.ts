@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
-import type { RunningHubWorkflow } from "@/lib/runninghub";
 import * as channelApi from "@/services/backend-channel";
 import * as settingsApi from "@/services/backend-settings";
 
@@ -45,8 +44,6 @@ export type AiConfig = {
     size: string;
     count: string;
     canvasImageCount: string;
-    runninghubApiKey: string;
-    runninghubWorkflows: RunningHubWorkflow[];
 };
 
 export type WebdavSyncConfig = {
@@ -102,8 +99,6 @@ export const defaultConfig: AiConfig = {
     size: "1:1",
     count: "1",
     canvasImageCount: "1",
-    runninghubApiKey: "",
-    runninghubWorkflows: [],
 };
 
 export const defaultWebdavSyncConfig: WebdavSyncConfig = {
@@ -253,9 +248,10 @@ export const useConfigStore = create<ConfigStore>()(
             partialize: (state) => ({ config: state.config, webdav: state.webdav }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
-                const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
+                const persistedConfig = (persistedState.config || {}) as Partial<AiConfig> & Record<string, unknown>;
                 const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
-                const config = { ...defaultConfig, ...persistedConfig };
+                const { runninghubApiKey: _oldRunningHubApiKey, runninghubWorkflows: _oldRunningHubWorkflows, ...safePersistedConfig } = persistedConfig;
+                const config = { ...defaultConfig, ...safePersistedConfig };
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
                 const channels = normalizeChannels(config);
                 const models = modelOptionsFromChannels(channels);

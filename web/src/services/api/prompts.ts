@@ -32,7 +32,8 @@ export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROM
             ...(pageSize ? { pageSize } : {}),
         }),
     );
-    const response = await fetch(`/api/prompts${params.size ? `?${params}` : ""}`);
+    const baseUrl = (import.meta as any).env?.VITE_BACKEND_URL || "";
+    const response = await fetch(`${baseUrl}/api/v1/prompts${params.size ? `?${params}` : ""}`);
     if (!response.ok) throw new Error("获取提示词失败");
     return (await response.json()) as PromptListResponse;
 }

@@ -1,5 +1,3 @@
-"use client";
-
 import { Copy, FolderPlus } from "lucide-react";
 import { Button, Modal, Space, Tag } from "antd";
 

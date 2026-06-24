@@ -1,5 +1,3 @@
-"use client";
-
 import { App, Button, Form, Input, Modal, Select, Space, Switch, Upload } from "antd";
 import { ArrowDown, ArrowUp, ClipboardPaste, Download, Plus, Settings2, Trash2, Upload as UploadIcon } from "lucide-react";
 import { useRef, useState } from "react";

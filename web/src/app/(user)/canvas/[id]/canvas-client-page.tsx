@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { BookOpen, Bot, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
+import { BookOpen, Bot, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video, Workflow } from "lucide-react";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
@@ -11,8 +11,8 @@ import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audi
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
 import { DOCS_URL } from "@/constant/env";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
-import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { getImageBlob, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
+import { resolveMediaUrl, uploadMediaFile, getMediaBlob, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -39,6 +39,9 @@ import { InfiniteCanvas } from "../components/infinite-canvas";
 import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
+import { CanvasRunningHubPanel } from "../components/canvas-runninghub-panel";
+import { executeRunningHubWorkflow, resumeRunningHubPoll, RunningHubTimeoutError } from "@/services/api/runninghub";
+import { RUNNINGHUB_DEFAULT_TIMEOUT_S, paramKey, type RunningHubParamValues } from "@/lib/runninghub";
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
@@ -174,7 +177,7 @@ function CanvasRefreshShell() {
     );
 }
 
-function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: PendingConnectionCreate; onCreate: (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio) => void; onClose: () => void }) {
+function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: PendingConnectionCreate; onCreate: (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.RunningHub) => void; onClose: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     return (
         <div
@@ -198,6 +201,7 @@ function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: Pending
                 <ConnectionCreateOption theme={theme} icon={<Video className="size-5" />} title="视频生成" onClick={() => onCreate(CanvasNodeType.Video)} />
                 <ConnectionCreateOption theme={theme} icon={<Music2 className="size-5" />} title="音频参考" onClick={() => onCreate(CanvasNodeType.Audio)} />
                 <ConnectionCreateOption theme={theme} icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
+                <ConnectionCreateOption theme={theme} icon={<Workflow className="size-5" />} title="RunningHub" description="ComfyUI 云端工作流" onClick={() => onCreate(CanvasNodeType.RunningHub)} />
             </div>
         </div>
     );
@@ -594,7 +598,7 @@ function InfiniteCanvasPage() {
     );
 
     const createConnectedNode = useCallback(
-        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio, pending: PendingConnectionCreate) => {
+        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.RunningHub, pending: PendingConnectionCreate) => {
             const metadata = type === CanvasNodeType.Config ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
@@ -2272,6 +2276,187 @@ function InfiniteCanvasPage() {
         generateNodeRef.current = handleGenerateNode;
     }, [handleGenerateNode]);
 
+    const handleRunningHubParamChange = useCallback((nodeId: string, key: string, value: string) => {
+        setNodes((prev) => prev.map((n) => (n.id !== nodeId ? n : { ...n, metadata: { ...n.metadata, runninghubParamValues: { ...(n.metadata?.runninghubParamValues || {}), [key]: value } } })));
+    }, []);
+
+    const handleRunningHubExecute = useCallback(
+        async (nodeId: string) => {
+            const node = nodesRef.current.find((n) => n.id === nodeId);
+            if (!node) return;
+            const workflow = effectiveConfig.runninghubWorkflows.find((w) => w.id === node.metadata?.runninghubWorkflowId);
+            if (!workflow || !effectiveConfig.runninghubApiKey) return;
+
+            const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
+            setRunningNodeId(nodeId);
+            setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, runninghubLastError: undefined, runninghubStatus: "提交中..." } } : n)));
+
+            try {
+                const stored = node.metadata?.runninghubParamValues || {};
+                const promptParams = (workflow.params || []).filter((p) => p.role === "prompt").sort((a, b) => a.order - b.order);
+                const imageParamsSorted = (workflow.params || []).filter((p) => p.role === "image").sort((a, b) => a.order - b.order);
+                const videoParamsSorted = (workflow.params || []).filter((p) => p.role === "video").sort((a, b) => a.order - b.order);
+                const booleanParams = (workflow.params || []).filter((p) => p.role === "boolean");
+                const numberStringParams = (workflow.params || []).filter((p) => p.role === "number" || p.role === "string");
+
+                const upstreamTexts = collectUpstreamTexts(nodeId, nodesRef.current, connectionsRef.current);
+                const textMapping = resolveUpstreamMapping(promptParams, stored, upstreamTexts);
+
+                const texts: Record<string, string> = {};
+                for (const p of promptParams) {
+                    const key = paramKey(p);
+                    const hasExplicitSource = Boolean(stored[`@source:${key}`]);
+                    const mapped = textMapping.get(key);
+                    if (hasExplicitSource && mapped) {
+                        texts[key] = mapped;
+                    } else {
+                        const manual = stored[key] ?? "";
+                        texts[key] = manual || mapped || "";
+                    }
+                }
+
+                for (const p of numberStringParams) {
+                    const val = stored[paramKey(p)] ?? p.defaultValue ?? "";
+                    if (val) texts[paramKey(p)] = val;
+                }
+
+                const booleans: Record<string, string> = {};
+                for (const p of booleanParams) booleans[paramKey(p)] = stored[paramKey(p)] ?? p.defaultValue ?? "false";
+
+                const mediaBlobs = new Map<string, Blob>();
+
+                const upstreamImageItems = await collectUpstreamImageBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                const imageMapping = resolveUpstreamMapping(imageParamsSorted, stored, upstreamImageItems);
+                for (const [key, blob] of imageMapping) mediaBlobs.set(key, blob);
+
+                const upstreamVideoItems = await collectUpstreamVideoBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                const videoMapping = resolveUpstreamMapping(videoParamsSorted, stored, upstreamVideoItems);
+                for (const [key, blob] of videoMapping) mediaBlobs.set(key, blob);
+
+                const values: RunningHubParamValues = { texts, images: {}, videos: {}, booleans };
+                const results = await executeRunningHubWorkflow(
+                    effectiveConfig.runninghubApiKey,
+                    workflow,
+                    values,
+                    mediaBlobs,
+                    node.metadata?.runninghubTimeout || RUNNINGHUB_DEFAULT_TIMEOUT_S,
+                    (_status, detail) => {
+                        setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, runninghubStatus: detail || _status } } : n)));
+                    },
+                    { signal: abortController.signal },
+                );
+                createRunningHubOutputNodes(nodeId, results);
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, runninghubStatus: undefined, runninghubTaskId: undefined } } : n)));
+            } catch (error) {
+                if (error instanceof RunningHubTimeoutError) {
+                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubTaskId: error.taskId, runninghubLastError: error.message, runninghubStatus: undefined } } : n)));
+                } else {
+                    const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "执行失败";
+                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubLastError: errorMessage, runninghubStatus: undefined } } : n)));
+                }
+            } finally {
+                finishGenerationRequest(nodeId, abortController);
+                setRunningNodeId(null);
+            }
+        },
+        [effectiveConfig, startGenerationRequest, finishGenerationRequest],
+    );
+
+    const handleRunningHubResume = useCallback(
+        async (nodeId: string) => {
+            const node = nodesRef.current.find((n) => n.id === nodeId);
+            const taskId = node?.metadata?.runninghubTaskId;
+            if (!taskId || !effectiveConfig.runninghubApiKey) return;
+
+            const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
+            setRunningNodeId(nodeId);
+            setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, runninghubLastError: undefined, runninghubStatus: "恢复查询..." } } : n)));
+
+            try {
+                const results = await resumeRunningHubPoll(
+                    effectiveConfig.runninghubApiKey,
+                    taskId,
+                    node?.metadata?.runninghubTimeout || RUNNINGHUB_DEFAULT_TIMEOUT_S,
+                    (_status, detail) => {
+                        setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, runninghubStatus: detail || _status } } : n)));
+                    },
+                    { signal: abortController.signal },
+                );
+                createRunningHubOutputNodes(nodeId, results);
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, runninghubStatus: undefined, runninghubTaskId: undefined } } : n)));
+            } catch (error) {
+                if (error instanceof RunningHubTimeoutError) {
+                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubTaskId: error.taskId, runninghubLastError: error.message, runninghubStatus: undefined } } : n)));
+                } else {
+                    const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "查询失败";
+                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubLastError: errorMessage, runninghubStatus: undefined } } : n)));
+                }
+            } finally {
+                finishGenerationRequest(nodeId, abortController);
+                setRunningNodeId(null);
+            }
+        },
+        [effectiveConfig, startGenerationRequest, finishGenerationRequest],
+    );
+
+    const createRunningHubOutputNodes = useCallback((sourceNodeId: string, results: Awaited<ReturnType<typeof executeRunningHubWorkflow>>) => {
+        const sourceNode = nodesRef.current.find((n) => n.id === sourceNodeId);
+        if (!sourceNode || !results.length) return;
+
+        let offsetY = sourceNode.position.y;
+        const offsetX = sourceNode.position.x + sourceNode.width + 80;
+        const newNodes: CanvasNodeData[] = [];
+        const newConnections: CanvasConnection[] = [];
+
+        for (const result of results) {
+            if (result.type === "image") {
+                const width = 340;
+                const height = result.width && result.height ? Math.round((width * result.height) / result.width) : 240;
+                newNodes.push({
+                    id: nanoid(),
+                    type: CanvasNodeType.Image,
+                    title: "RunningHub 生成",
+                    position: { x: offsetX, y: offsetY },
+                    width,
+                    height,
+                    metadata: { content: result.dataUrl, status: "success", storageKey: result.storageKey, naturalWidth: result.width, naturalHeight: result.height, bytes: result.bytes, mimeType: result.mimeType },
+                });
+                offsetY += height + 40;
+            } else if (result.type === "video") {
+                const width = 420;
+                const height = result.width && result.height ? Math.round((width * result.height) / result.width) : 236;
+                newNodes.push({
+                    id: nanoid(),
+                    type: CanvasNodeType.Video,
+                    title: "RunningHub 生成",
+                    position: { x: offsetX, y: offsetY },
+                    width,
+                    height,
+                    metadata: { content: result.url, status: "success", storageKey: result.storageKey, naturalWidth: result.width, naturalHeight: result.height, bytes: result.bytes, mimeType: result.mimeType, durationMs: result.durationMs },
+                });
+                offsetY += height + 40;
+            } else if (result.type === "text" && result.text) {
+                newNodes.push({
+                    id: nanoid(),
+                    type: CanvasNodeType.Text,
+                    title: "RunningHub 输出",
+                    position: { x: offsetX, y: offsetY },
+                    width: 340,
+                    height: 240,
+                    metadata: { content: result.text, status: "success", fontSize: 14 },
+                });
+                offsetY += 280;
+            }
+        }
+
+        for (const node of newNodes) {
+            newConnections.push({ id: nanoid(), fromNodeId: sourceNodeId, toNodeId: node.id });
+        }
+
+        setNodes((prev) => [...prev, ...newNodes]);
+        setConnections((prev) => [...prev, ...newConnections]);
+    }, []);
+
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData) => {
             const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
@@ -2592,6 +2777,22 @@ function InfiniteCanvasPage() {
                                         onChange={(composerContent) => handleConfigNodeChange(panelNode.id, { composerContent })}
                                         onClose={() => setDialogNodeId(null)}
                                     />
+                                ) : panelNode.type === CanvasNodeType.RunningHub ? (
+                                    <CanvasRunningHubPanel
+                                        node={panelNode}
+                                        isRunning={runningNodeId === panelNode.id}
+                                        hasTaskId={Boolean(panelNode.metadata?.runninghubTaskId)}
+                                        upstreamNodes={connectionsRef.current
+                                            .filter((c) => c.toNodeId === panelNode.id)
+                                            .map((c) => nodesRef.current.find((n) => n.id === c.fromNodeId))
+                                            .filter(Boolean)
+                                            .map((n) => ({ id: n!.id, title: n!.title, type: n!.type }))}
+                                        onParamChange={handleRunningHubParamChange}
+                                        onConfigChange={handleConfigNodeChange}
+                                        onExecute={handleRunningHubExecute}
+                                        onResume={handleRunningHubResume}
+                                        onStop={confirmStopGeneration}
+                                    />
                                 ) : (
                                     <CanvasNodePromptPanel
                                         node={panelNode}
@@ -2702,6 +2903,7 @@ function InfiniteCanvasPage() {
                     onAddAudio={() => createNode(CanvasNodeType.Audio)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
                     onAddConfig={() => createNode(CanvasNodeType.Config)}
+                    onAddRunningHub={() => createNode(CanvasNodeType.RunningHub)}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
                     onUpload={() => handleUploadRequest()}
@@ -3241,4 +3443,67 @@ function buildAngleLabel(params: CanvasImageAngleParams) {
 
 function buildAnglePrompt(params: CanvasImageAngleParams) {
     return `基于参考图重新生成同一主体的新视角，保持主体、颜色、材质和画面风格一致，不要只做透视变形。${buildAngleLabel(params)}。`;
+}
+
+async function collectUpstreamImageBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): Promise<Array<{ nodeId: string; value: Blob }>> {
+    const upstreamNodeIds = connections.filter((c) => c.toNodeId === nodeId).map((c) => c.fromNodeId);
+    const imageNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id) && n.type === CanvasNodeType.Image && n.metadata?.storageKey);
+    const items: Array<{ nodeId: string; value: Blob }> = [];
+    for (const node of imageNodes) {
+        if (!node.metadata?.storageKey) continue;
+        const blob = await getImageBlob(node.metadata.storageKey);
+        if (blob) items.push({ nodeId: node.id, value: blob });
+    }
+    return items;
+}
+
+function collectUpstreamTexts(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): Array<{ nodeId: string; value: string }> {
+    const upstreamNodeIds = connections.filter((c) => c.toNodeId === nodeId).map((c) => c.fromNodeId);
+    return nodes
+        .filter((n) => upstreamNodeIds.includes(n.id) && n.type === CanvasNodeType.Text && n.metadata?.content)
+        .map((n) => ({ nodeId: n.id, value: n.metadata!.content! }));
+}
+
+async function collectUpstreamVideoBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): Promise<Array<{ nodeId: string; value: Blob }>> {
+    const upstreamNodeIds = connections.filter((c) => c.toNodeId === nodeId).map((c) => c.fromNodeId);
+    const videoNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id) && n.type === CanvasNodeType.Video && n.metadata?.storageKey);
+    const items: Array<{ nodeId: string; value: Blob }> = [];
+    for (const node of videoNodes) {
+        if (!node.metadata?.storageKey) continue;
+        const blob = await getMediaBlob(node.metadata.storageKey);
+        if (blob) items.push({ nodeId: node.id, value: blob });
+    }
+    return items;
+}
+
+function resolveUpstreamMapping<T>(
+    params: import("@/lib/runninghub").RunningHubParam[],
+    stored: Record<string, string>,
+    upstreamItems: Array<{ nodeId: string; value: T }>,
+): Map<string, T> {
+    const result = new Map<string, T>();
+    const usedUpstreamIds = new Set<string>();
+
+    for (const p of params) {
+        const sourceKey = `@source:${paramKey(p)}`;
+        const targetNodeId = stored[sourceKey];
+        if (targetNodeId) {
+            const item = upstreamItems.find((u) => u.nodeId === targetNodeId);
+            if (item) {
+                result.set(paramKey(p), item.value);
+                usedUpstreamIds.add(targetNodeId);
+            }
+        }
+    }
+
+    const remaining = upstreamItems.filter((u) => !usedUpstreamIds.has(u.nodeId));
+    let remainingIndex = 0;
+    for (const p of params) {
+        if (result.has(paramKey(p))) continue;
+        if (remainingIndex < remaining.length) {
+            result.set(paramKey(p), remaining[remainingIndex++].value);
+        }
+    }
+
+    return result;
 }

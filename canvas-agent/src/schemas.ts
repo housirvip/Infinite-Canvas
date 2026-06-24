@@ -3,7 +3,7 @@ import { z } from "zod";
 const recordSchema = z.record(z.unknown());
 const positionSchema = z.object({ x: z.number(), y: z.number() });
 const viewportSchema = z.object({ x: z.number(), y: z.number(), k: z.number() });
-const nodeTypeSchema = z.enum(["image", "text", "config", "video", "audio"]);
+const nodeTypeSchema = z.enum(["image", "text", "config", "video", "audio", "runninghub"]);
 const generationModeSchema = z.enum(["text", "image", "video", "audio"]);
 
 export const toolNames = [

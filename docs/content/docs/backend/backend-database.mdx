@@ -1,0 +1,70 @@
+---
+title: 后端数据库结构
+description: 当前后端主要数据表说明
+---
+
+# 后端数据库结构
+
+本文档记录当前后端主要数据表和关键字段用途。
+
+## `api_channels`
+
+模型渠道配置表。每条记录归属一个用户，用于保存模型服务 Base URL、调用格式、模型列表、并发配置和加密后的 API Key。
+
+- `user_id`：所属用户。
+- `provider`：渠道类型或调用格式来源。
+- `base_url`：模型服务地址。
+- `encrypted_api_key`：AES 加密后的 API Key，接口不返回明文。
+- `models`：该渠道可用模型列表 JSON。
+- `enabled`：渠道是否启用。
+
+## `user_settings`
+
+用户通用偏好表。每个用户最多一条记录，`settings` 字段保存通用 UI 和模型偏好 JSON。
+
+- `user_id`：所属用户，唯一。
+- `settings`：通用偏好 JSON，不再保存 RunningHub API Key 和工作流配置。
+- `updated_at`：更新时间。
+
+## `running_hub_configs`
+
+RunningHub 独立配置表。
+
+- 每个用户最多一条 RunningHub 配置。
+- `encrypted_api_key` 保存 AES 加密后的 RunningHub API Key，接口不会返回明文。
+- `workflows` 保存 RunningHub 工作流 JSON，结构对应前端 `RunningHubWorkflow`：`id`、`name`、`workflowId`、`outputType`、`instanceType`、`params`。
+
+## `tasks`
+
+后端异步任务表。图片、视频、音频和 RunningHub 任务都会写入该表，由调度器执行并通过 WebSocket 推送状态。
+
+- `task_id`：对外任务 ID。
+- `user_id`：所属用户。
+- `type`：任务类型，例如 `image_generation`、`video_generation`、`audio_generation`、`runninghub`。
+- `provider`：任务提供方。
+- `status`：任务状态。
+- `params`：任务参数 JSON。
+- `result_data`：任务结果 JSON。
+- `file_ids`：任务产物文件 ID 列表。
+
+## `canvas_projects`
+
+画布项目表。保存画布标题、视口、背景、节点、连线和会话状态。
+
+- `project_id`：对外项目 ID。
+- `user_id`：所属用户。
+- `title`：画布标题。
+- `nodes_json`：节点 JSON。
+- `connections_json`：连线 JSON。
+- `chat_sessions_json`：画布助手会话 JSON。
+
+## `assets`
+
+“我的素材”表。保存用户素材的基础信息、标签、备注和素材数据 JSON。
+
+- `asset_id`：对外素材 ID。
+- `user_id`：所属用户。
+- `kind`：素材类型，例如图片或视频。
+- `title`：素材标题。
+- `tags`：标签 JSON。
+- `data`：素材数据 JSON。

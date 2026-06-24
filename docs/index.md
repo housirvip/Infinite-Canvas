@@ -17,6 +17,7 @@
 
 - [本地开发](/docs/backend/local-development)
 - [画布数据结构](/docs/backend/canvas-data-structure)
+- [后端数据库结构](/docs/backend/backend-database)
 
 ## 商务合作
 

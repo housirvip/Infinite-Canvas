@@ -11,3 +11,4 @@ data/
 .codegraph/
 web/dist/
 bun.lock
+web/package-lock.json

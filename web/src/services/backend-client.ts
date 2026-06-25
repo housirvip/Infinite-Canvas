@@ -4,12 +4,21 @@ const BASE_URL = "/api/v1";
 
 let accessToken = "";
 let refreshToken = "";
+let tokenVersion = 0;
 let onAuthFailed: (() => void) | null = null;
+let onTokensRefreshed: ((access: string, refresh: string) => void) | null = null;
 let refreshPromise: Promise<string> | null = null;
+let isApplyingRefresh = false;
 
-export function setTokens(access: string, refresh: string) {
+function applyTokens(access: string, refresh: string) {
+    tokenVersion += 1;
     accessToken = access;
     refreshToken = refresh;
+    if (isApplyingRefresh) onTokensRefreshed?.(access, refresh);
+}
+
+export function setTokens(access: string, refresh: string) {
+    applyTokens(access, refresh);
 }
 
 export function getAccessToken() {
@@ -17,6 +26,7 @@ export function getAccessToken() {
 }
 
 export function clearTokens() {
+    tokenVersion += 1;
     accessToken = "";
     refreshToken = "";
 }
@@ -25,12 +35,19 @@ export function setOnAuthFailed(fn: () => void) {
     onAuthFailed = fn;
 }
 
+export function setOnTokensRefreshed(fn: (access: string, refresh: string) => void) {
+    onTokensRefreshed = fn;
+}
+
 async function doRefresh(): Promise<string> {
     if (!refreshToken) throw new Error("no refresh token");
+    const sessionVersion = tokenVersion;
     const res = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
+    if (sessionVersion !== tokenVersion) throw new Error("stale refresh");
     const tokens = res.data.tokens as { accessToken: string; refreshToken: string };
-    accessToken = tokens.accessToken;
-    refreshToken = tokens.refreshToken;
+    isApplyingRefresh = true;
+    applyTokens(tokens.accessToken, tokens.refreshToken);
+    isApplyingRefresh = false;
     return accessToken;
 }
 
@@ -38,6 +55,7 @@ function ensureRefresh(): Promise<string> {
     if (!refreshPromise) {
         refreshPromise = doRefresh().finally(() => {
             refreshPromise = null;
+            isApplyingRefresh = false;
         });
     }
     return refreshPromise;
@@ -60,7 +78,10 @@ client.interceptors.response.use(undefined, async (error) => {
             const newToken = await ensureRefresh();
             original.headers.Authorization = `Bearer ${newToken}`;
             return client(original);
-        } catch {
+        } catch (refreshError) {
+            if (refreshError instanceof Error && refreshError.message === "stale refresh") {
+                return Promise.reject(error);
+            }
             clearTokens();
             onAuthFailed?.();
             return Promise.reject(error);

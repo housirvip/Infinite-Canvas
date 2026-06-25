@@ -26,8 +26,8 @@ type CanvasProjectPatch = Partial<Pick<CanvasProject, "nodes" | "connections" | 
 type CanvasStore = {
     hydrated: boolean;
     projects: CanvasProject[];
-    createProject: (title?: string) => string;
-    importProject: (project: Partial<CanvasProject>) => string;
+    createProject: (title?: string) => Promise<string>;
+    importProject: (project: Partial<CanvasProject>) => Promise<string>;
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
@@ -57,6 +57,21 @@ function buildProjectSavePatch(patch: CanvasProjectPatch): Record<string, any> {
         savePatch.viewportK = patch.viewport.k;
     }
     return savePatch;
+}
+function toCanvasProject(full: projectApi.ProjectFull): CanvasProject {
+    return {
+        id: full.projectId,
+        title: full.title,
+        createdAt: full.createdAt,
+        updatedAt: full.updatedAt,
+        nodes: full.nodes || [],
+        connections: full.connections || [],
+        chatSessions: full.chatSessions || [],
+        activeChatId: full.activeChatId || null,
+        backgroundMode: (full.backgroundMode || "lines") as CanvasBackgroundMode,
+        showImageInfo: full.showImageInfo,
+        viewport: { x: full.viewportX, y: full.viewportY, k: full.viewportK || 1 },
+    };
 }
 
 function debouncedSave(projectId: string, patch: Record<string, any>) {
@@ -104,20 +119,7 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
 
     fetchProject: async (id) => {
         try {
-            const full = await projectApi.getProject(id);
-            const project: CanvasProject = {
-                id: full.projectId,
-                title: full.title,
-                createdAt: full.createdAt,
-                updatedAt: full.updatedAt,
-                nodes: full.nodes || [],
-                connections: full.connections || [],
-                chatSessions: full.chatSessions || [],
-                activeChatId: full.activeChatId || null,
-                backgroundMode: (full.backgroundMode || "lines") as CanvasBackgroundMode,
-                showImageInfo: full.showImageInfo,
-                viewport: { x: full.viewportX, y: full.viewportY, k: full.viewportK || 1 },
-            };
+            const project = toCanvasProject(await projectApi.getProject(id));
             set((state) => ({
                 hydrated: true,
                 projects: state.projects.some((p) => p.id === id)
@@ -131,62 +133,38 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
         }
     },
 
-    createProject: (title = "未命名画布") => {
-        const now = new Date().toISOString();
+    createProject: async (title = "未命名画布") => {
         const id = nanoid();
-        const project: CanvasProject = {
-            id,
-            title,
-            createdAt: now,
-            updatedAt: now,
-            nodes: [],
-            connections: [],
-            chatSessions: [],
-            activeChatId: null,
-            backgroundMode: "lines",
-            showImageInfo: false,
-            viewport: initialViewport,
-        };
+        const project = toCanvasProject(
+            await projectApi.createProject({
+                projectId: id,
+                title,
+                backgroundMode: "lines",
+            }),
+        );
         set((state) => ({ projects: [project, ...state.projects] }));
-        projectApi.createProject({
-            projectId: id,
-            title,
-            backgroundMode: "lines",
-        }).catch((err) => console.error("[canvas-save] create failed:", id, err?.response?.status, err?.response?.data || err.message));
-        return id;
+        return project.id;
     },
 
-    importProject: (source) => {
-        const now = new Date().toISOString();
+    importProject: async (source) => {
         const id = nanoid();
-        const project: CanvasProject = {
-            id,
-            title: source.title || "导入画布",
-            createdAt: source.createdAt || now,
-            updatedAt: now,
-            nodes: source.nodes || [],
-            connections: source.connections || [],
-            chatSessions: source.chatSessions || [],
-            activeChatId: source.activeChatId || null,
-            backgroundMode: source.backgroundMode || "lines",
-            showImageInfo: source.showImageInfo || false,
-            viewport: source.viewport || initialViewport,
-        };
+        const project = toCanvasProject(
+            await projectApi.createProject({
+                projectId: id,
+                title: source.title || "导入画布",
+                backgroundMode: source.backgroundMode || "lines",
+                showImageInfo: source.showImageInfo || false,
+                viewportX: source.viewport?.x ?? initialViewport.x,
+                viewportY: source.viewport?.y ?? initialViewport.y,
+                viewportK: source.viewport?.k ?? initialViewport.k,
+                activeChatId: source.activeChatId || undefined,
+                nodes: source.nodes || [],
+                connections: source.connections || [],
+                chatSessions: source.chatSessions || [],
+            }),
+        );
         set((state) => ({ projects: [project, ...state.projects] }));
-        projectApi.createProject({
-            projectId: id,
-            title: project.title,
-            backgroundMode: project.backgroundMode,
-            showImageInfo: project.showImageInfo,
-            viewportX: project.viewport.x,
-            viewportY: project.viewport.y,
-            viewportK: project.viewport.k,
-            activeChatId: project.activeChatId || undefined,
-            nodes: project.nodes,
-            connections: project.connections,
-            chatSessions: project.chatSessions,
-        }).catch((err) => console.error("[canvas-save] import failed:", id, err?.response?.status, err?.response?.data || err.message));
-        return id;
+        return project.id;
     },
 
     openProject: (id) => {

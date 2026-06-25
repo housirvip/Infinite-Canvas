@@ -444,7 +444,11 @@ function InfiniteCanvasPage() {
         if (!projectId) return;
         let canceled = false;
         useCanvasStore.getState().fetchProject(projectId).then((project) => {
-            if (canceled || !project) return;
+            if (canceled) return;
+            if (!project) {
+                navigate("/canvas", { replace: true });
+                return;
+            }
             const restore = async () => {
                 const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
                 const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
@@ -472,12 +476,14 @@ function InfiniteCanvasPage() {
                 setHistoryState({ canUndo: false, canRedo: false });
                 setProjectLoaded(true);
             };
-            restore();
+            restore().catch(() => {
+                if (!canceled) navigate("/canvas", { replace: true });
+            });
         }).catch(() => {
             if (!canceled) navigate("/canvas", { replace: true });
         });
         return () => { canceled = true; };
-    }, [projectId]);
+    }, [navigate, projectId]);
 
     useEffect(() => {
         const unsub = backendWs.onAnyTask((msg) => {
@@ -1132,10 +1138,14 @@ function InfiniteCanvasPage() {
         applyHistory(next);
     }, [applyHistory]);
 
-    const createAndOpenProject = useCallback(() => {
-        const id = createProject(`无限画布 ${useCanvasStore.getState().projects.length + 1}`);
-        navigate(`/canvas/${id}`);
-    }, [createProject, navigate]);
+    const createAndOpenProject = useCallback(async () => {
+        try {
+            const id = await createProject(`无限画布 ${useCanvasStore.getState().projects.length + 1}`);
+            navigate(`/canvas/${id}`);
+        } catch {
+            message.error("新建画布失败，请稍后重试");
+        }
+    }, [createProject, message, navigate]);
 
     const deleteCurrentProject = useCallback(() => {
         if (!projectId) return;

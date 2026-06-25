@@ -45,7 +45,14 @@ function CanvasPageInner() {
     const enterProject = (id: string) => {
         navigate(`/canvas/${id}${agentQuery}`);
     };
-    const createAndEnter = () => enterProject(createProject(`无限画布 ${projects.length + 1}`));
+    const createAndEnter = async () => {
+        try {
+            enterProject(await createProject(`无限画布 ${projects.length + 1}`));
+        } catch {
+            message.error("新建画布失败，请稍后重试");
+            navigate("/canvas", { replace: true });
+        }
+    };
     const importCanvas = async (file?: File) => {
         if (!file) return;
         try {
@@ -63,10 +70,10 @@ function CanvasPageInner() {
                     }),
                 ),
             );
-            data.projects.forEach((item) => importProject(item.project));
+            await Promise.all(data.projects.map((item) => importProject(item.project)));
             message.success(`已导入 ${data.projects.length} 个画布`);
         } catch {
-            message.error("导入失败，请选择有效的画布压缩包");
+            message.error("导入画布失败，请稍后重试");
         } finally {
             if (inputRef.current) inputRef.current.value = "";
         }
@@ -75,8 +82,12 @@ function CanvasPageInner() {
     useEffect(() => {
         if (!hydrated || autoOpenRef.current || (mode !== "new" && mode !== "recent")) return;
         autoOpenRef.current = true;
-        enterProject(mode === "new" ? createProject(`无限画布 ${projects.length + 1}`) : projects[0]?.id || createProject(`无限画布 ${projects.length + 1}`));
-    }, [createProject, hydrated, mode, projects]);
+        if (mode === "recent" && projects[0]?.id) {
+            enterProject(projects[0].id);
+            return;
+        }
+        void createAndEnter();
+    }, [createAndEnter, hydrated, mode, projects]);
 
     if (hydrated && (mode === "new" || mode === "recent")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
 
@@ -107,7 +118,7 @@ function CanvasPageInner() {
                         <Button disabled={!hydrated} icon={<FileUp className="size-4" />} onClick={() => inputRef.current?.click()}>
                             导入画布
                         </Button>
-                        <Button disabled={!hydrated} type="primary" icon={<Plus className="size-4" />} onClick={createAndEnter}>
+                        <Button disabled={!hydrated} type="primary" icon={<Plus className="size-4" />} onClick={() => void createAndEnter()}>
                             新建画布
                         </Button>
                     </div>
@@ -125,7 +136,7 @@ function CanvasPageInner() {
                     <section className="flex min-h-[360px] flex-col items-center justify-center border-y border-stone-200 text-center dark:border-stone-800">
                         <h2 className="text-xl font-medium">还没有画布</h2>
                         <p className="mt-3 text-sm text-stone-500">新建一个画布后，就可以独立保存节点、连线和画布外观。</p>
-                        <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={createAndEnter}>
+                        <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={() => void createAndEnter()}>
                             新建画布
                         </Button>
                     </section>

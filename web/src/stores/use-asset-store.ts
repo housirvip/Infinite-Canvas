@@ -1,8 +1,6 @@
 import { create } from "zustand";
 
 import { nanoid } from "nanoid";
-import { resolveImageUrl } from "@/services/image-storage";
-import { resolveMediaUrl } from "@/services/file-storage";
 import client from "@/services/backend-client";
 
 export type AssetKind = "text" | "image" | "video";
@@ -33,7 +31,11 @@ type AssetStore = {
     replaceAssets: (assets: Asset[]) => void;
     cleanupImages: (extra?: unknown) => void;
     fetchAssets: () => Promise<void>;
+    reset: () => void;
 };
+
+let assetFetchPromise: Promise<void> | null = null;
+let assetVersion = 0;
 
 function toServerAsset(asset: Asset) {
     return {
@@ -79,13 +81,26 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
     assets: [],
 
     fetchAssets: async () => {
-        try {
-            const res = await client.get("/assets", { params: { pageSize: 100 } });
-            const assets: Asset[] = (res.data.assets || []).map(fromServerAsset);
-            set({ assets, hydrated: true });
-        } catch {
-            set({ hydrated: true });
+        if (get().hydrated) return;
+        if (assetFetchPromise) {
+            await assetFetchPromise;
+            return;
         }
+
+        const version = assetVersion;
+        assetFetchPromise = (async () => {
+            try {
+                const res = await client.get("/assets", { params: { pageSize: 100 } });
+                const assets: Asset[] = (res.data.assets || []).map(fromServerAsset);
+                if (version === assetVersion) set({ assets, hydrated: true });
+            } catch {
+                if (version === assetVersion) set({ hydrated: true });
+            } finally {
+                assetFetchPromise = null;
+            }
+        })();
+
+        await assetFetchPromise;
     },
 
     addAsset: (asset) => {
@@ -119,7 +134,13 @@ export const useAssetStore = create<AssetStore>()((set, get) => ({
         client.delete(`/assets/${id}`).catch(() => {});
     },
 
-    replaceAssets: (assets) => set({ assets }),
+    replaceAssets: (assets) => set({ assets, hydrated: true }),
 
     cleanupImages: () => {},
+
+    reset: () => {
+        assetVersion += 1;
+        assetFetchPromise = null;
+        set({ assets: [], hydrated: false });
+    },
 }));

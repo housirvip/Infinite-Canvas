@@ -6,11 +6,12 @@ import zhCN from "antd/locale/zh_CN";
 
 import { ClientRootInit } from "@/components/layout/client-root-init";
 import { getAntThemeConfig } from "@/lib/app-theme";
+import { backendWs } from "@/services/backend-ws";
+import { useConfigStore } from "@/stores/use-config-store";
+import { useAssetStore } from "@/stores/use-asset-store";
+import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { useConfigStore } from "@/stores/use-config-store";
-import { useRunningHubStore } from "@/stores/use-runninghub-store";
-import { backendWs } from "@/services/backend-ws";
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -25,7 +26,10 @@ const queryClient = new QueryClient({
 export function AppProviders({ children }: { children: ReactNode }) {
     const theme = useThemeStore((state) => state.theme);
     const dark = theme === "dark";
-    const user = useUserStore((state) => state.user);
+    const userId = useUserStore((state) => state.user?.id ?? null);
+    const authReady = useUserStore((state) => state.authReady);
+    const assetsHydrated = useAssetStore((state) => state.hydrated);
+    const fetchAssets = useAssetStore((state) => state.fetchAssets);
     const fetchConfigFromServer = useConfigStore((state) => state.fetchConfigFromServer);
     const fetchRunningHubConfigFromServer = useRunningHubStore((state) => state.fetchConfigFromServer);
 
@@ -35,14 +39,23 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }, [dark, theme]);
 
     useEffect(() => {
-        if (user) {
-            backendWs.connect();
-            void Promise.all([fetchConfigFromServer(), fetchRunningHubConfigFromServer()]);
-        } else {
+        if (!authReady || !userId) {
             backendWs.disconnect();
+            return;
         }
+        backendWs.connect();
         return () => backendWs.disconnect();
-    }, [user, fetchConfigFromServer, fetchRunningHubConfigFromServer]);
+    }, [authReady, userId]);
+
+    useEffect(() => {
+        if (!authReady || !userId) return;
+        void Promise.all([fetchConfigFromServer(), fetchRunningHubConfigFromServer()]);
+    }, [authReady, fetchConfigFromServer, fetchRunningHubConfigFromServer, userId]);
+
+    useEffect(() => {
+        if (!authReady || !userId || assetsHydrated) return;
+        void fetchAssets();
+    }, [assetsHydrated, authReady, fetchAssets, userId]);
 
     return (
         <ConfigProvider locale={zhCN} theme={getAntThemeConfig(dark)}>

@@ -1,21 +1,36 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { Button, Form, Input, App } from "antd";
+import { Loader2 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { message } from "@/lib/message";
 import { useUserStore } from "@/stores/use-user-store";
 
 export default function RegisterPage() {
     const user = useUserStore((s) => s.user);
     const register = useUserStore((s) => s.register);
     const [loading, setLoading] = useState(false);
-    const { message } = App.useApp();
+    const [username, setUsername] = useState("");
+    const [displayName, setDisplayName] = useState("");
+    const [password, setPassword] = useState("");
 
     if (user) return <Navigate to="/" replace />;
 
-    const onFinish = async (values: { username: string; password: string; displayName?: string }) => {
+    const onSubmit = async (event: FormEvent) => {
+        event.preventDefault();
+        if (username.length < 3) {
+            message.error("用户名至少 3 个字符");
+            return;
+        }
+        if (password.length < 6) {
+            message.error("密码至少 6 个字符");
+            return;
+        }
         setLoading(true);
         try {
-            await register(values.username, values.password, values.displayName);
+            await register(username, password, displayName || undefined);
         } catch (error: any) {
             const msg = error.response?.data?.error;
             message.error(msg === "username already exists" ? "用户名已存在" : msg || "注册失败");
@@ -35,22 +50,24 @@ export default function RegisterPage() {
                     <p className="mt-1 text-sm text-stone-500">创建 Infinite Canvas 账号</p>
                 </div>
                 <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-800 dark:bg-stone-900">
-                    <Form layout="vertical" onFinish={onFinish} requiredMark={false}>
-                        <Form.Item label="用户名" name="username" rules={[{ required: true, message: "请输入用户名" }, { min: 3, message: "至少 3 个字符" }]}>
-                            <Input size="large" placeholder="用户名" autoComplete="username" />
-                        </Form.Item>
-                        <Form.Item label="显示名称" name="displayName">
-                            <Input size="large" placeholder="可选，默认与用户名相同" />
-                        </Form.Item>
-                        <Form.Item label="密码" name="password" rules={[{ required: true, message: "请输入密码" }, { min: 6, message: "至少 6 个字符" }]}>
-                            <Input.Password size="large" placeholder="密码" autoComplete="new-password" />
-                        </Form.Item>
-                        <Form.Item className="mb-0">
-                            <Button type="primary" htmlType="submit" size="large" block loading={loading}>
-                                注册
-                            </Button>
-                        </Form.Item>
-                    </Form>
+                    <form onSubmit={onSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="username">用户名</Label>
+                            <Input id="username" className="h-10" placeholder="用户名" autoComplete="username" required minLength={3} value={username} onChange={(e) => setUsername(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="displayName">显示名称</Label>
+                            <Input id="displayName" className="h-10" placeholder="可选，默认与用户名相同" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="password">密码</Label>
+                            <Input id="password" type="password" className="h-10" placeholder="密码" autoComplete="new-password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
+                        </div>
+                        <Button type="submit" size="lg" className="w-full" disabled={loading}>
+                            {loading && <Loader2 className="animate-spin" />}
+                            注册
+                        </Button>
+                    </form>
                 </div>
                 <p className="mt-4 text-center text-sm text-stone-500">
                     已有账号？

@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from "react";
-import { ConfigProvider, Switch } from "antd";
 
+import { Switch } from "@/components/ui/switch";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -86,7 +86,7 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                 16倍数对齐
                             </span>
                             <span title="输入完成后自动向上补成 16 的倍数" onMouseDown={(event) => event.stopPropagation()}>
-                                <Switch size="small" checked={snapDimensionToStep} onChange={setSnapDimensionToStep} />
+                                <Switch checked={snapDimensionToStep} onCheckedChange={setSnapDimensionToStep} />
                             </span>
                         </div>
                     </div>
@@ -130,17 +130,8 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
     );
 }
 
-export function ImageSettingsTheme({ theme, children }: { theme: CanvasTheme; children: ReactNode }) {
-    return (
-        <ConfigProvider
-            theme={{
-                token: { colorBgContainer: theme.toolbar.panel, colorBgElevated: theme.toolbar.panel, colorBorder: theme.node.stroke, colorPrimary: theme.node.activeStroke, colorText: theme.node.text, colorTextLightSolid: theme.node.panel },
-                components: { Button: { defaultBg: theme.toolbar.panel, defaultBorderColor: theme.node.stroke, defaultColor: theme.node.text } },
-            }}
-        >
-            {children}
-        </ConfigProvider>
-    );
+export function ImageSettingsTheme({ children }: { theme: CanvasTheme; children: ReactNode }) {
+    return <>{children}</>;
 }
 
 export function imageQualityLabel(value: string) {

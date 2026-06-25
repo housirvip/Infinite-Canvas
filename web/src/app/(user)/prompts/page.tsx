@@ -1,17 +1,20 @@
 import { FolderPlus, Search } from "lucide-react";
 import { type UIEvent, useEffect, useState } from "react";
-import { App, Button, Empty, Input, Spin, Tag } from "antd";
 
+import { Button } from "@/components/ui/button";
+import { Empty } from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { Spin } from "@/components/ui/spin";
 import { PromptCard } from "@/components/prompts/prompt-card";
 import { PromptDetailDialog } from "@/components/prompts/prompt-detail-dialog";
 import { usePromptList } from "@/components/prompts/use-prompt-list";
 import { useCopyText } from "@/hooks/use-copy-text";
+import { message } from "@/lib/message";
 import { cn } from "@/lib/utils";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { ALL_PROMPTS_OPTION, type Prompt } from "@/services/api/prompts";
 
 export default function PromptsPage() {
-    const { message } = App.useApp();
     const [titleKeyword, setTitleKeyword] = useState("");
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState(ALL_PROMPTS_OPTION);
@@ -24,7 +27,7 @@ export default function PromptsPage() {
         if (query.isError) {
             message.error(query.error instanceof Error ? query.error.message : "获取提示词失败");
         }
-    }, [message, query.error, query.isError]);
+    }, [query.error, query.isError]);
 
     const toggleTag = (tag: string) => {
         if (tag === ALL_PROMPTS_OPTION) return setSelectedTags([]);
@@ -62,16 +65,19 @@ export default function PromptsPage() {
                     {!query.isLoading ? (
                         <>
                             <div className="mx-auto mt-8 w-full max-w-2xl">
-                                <Input size="large" className="w-full" prefix={<Search className="size-4 text-stone-400" />} value={titleKeyword} placeholder="按标题查询" onChange={(event) => setTitleKeyword(event.target.value)} />
+                                <div className="relative w-full">
+                                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-stone-400" />
+                                    <Input className="w-full pl-10 h-11" value={titleKeyword} placeholder="按标题查询" onChange={(event) => setTitleKeyword(event.target.value)} />
+                                </div>
                             </div>
                             <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">
                                 <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">
                                     <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">分类</div>
                                     <div className="flex flex-wrap gap-2">
                                         {promptCategoryOptions.map((category) => (
-                                            <Tag.CheckableTag key={category} checked={selectedCategory === category} className={cn("prompt-filter-tag", selectedCategory === category && "is-active")} onChange={() => setSelectedCategory(category)}>
+                                            <button type="button" key={category} className={cn("prompt-filter-tag", selectedCategory === category && "is-active")} onClick={() => setSelectedCategory(category)}>
                                                 {category}
-                                            </Tag.CheckableTag>
+                                            </button>
                                         ))}
                                     </div>
                                 </div>
@@ -79,14 +85,14 @@ export default function PromptsPage() {
                                     <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">标签</div>
                                     <div className="flex flex-wrap gap-2">
                                         {promptTags.map((tag) => (
-                                            <Tag.CheckableTag
+                                            <button
+                                                type="button"
                                                 key={tag}
-                                                checked={tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag)}
                                                 className={cn("prompt-filter-tag", (tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag)) && "is-active")}
-                                                onChange={() => toggleTag(tag)}
+                                                onClick={() => toggleTag(tag)}
                                             >
                                                 {tag}
-                                            </Tag.CheckableTag>
+                                            </button>
                                         ))}
                                     </div>
                                 </div>
@@ -105,14 +111,15 @@ export default function PromptsPage() {
                                     onOpen={() => setSelectedPrompt(item)}
                                     onCopy={() => copyText(item.prompt, "提示词已复制")}
                                     extraAction={
-                                        <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => savePromptAsset(item)}>
+                                        <Button size="sm" onClick={() => savePromptAsset(item)}>
+                                            <FolderPlus className="size-3.5" />
                                             加入我的素材
                                         </Button>
                                     }
                                 />
                             ))}
                         </div>
-                        {promptItems.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到匹配的提示词" className="py-16" /> : null}
+                        {promptItems.length === 0 ? <Empty description="没有找到匹配的提示词" className="py-16" /> : null}
                         <div className="mx-auto mt-6 max-w-7xl text-center text-xs text-stone-500 dark:text-stone-400">
                             {query.isFetchingNextPage ? "加载中..." : query.hasNextPage ? "继续向下滚动加载更多" : promptItems.length > 0 ? "已经到底了" : null}
                         </div>

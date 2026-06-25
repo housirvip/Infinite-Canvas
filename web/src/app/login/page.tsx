@@ -1,21 +1,27 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { Button, Form, Input, App } from "antd";
+import { Loader2 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { message } from "@/lib/message";
 import { useUserStore } from "@/stores/use-user-store";
 
 export default function LoginPage() {
     const user = useUserStore((s) => s.user);
     const login = useUserStore((s) => s.login);
     const [loading, setLoading] = useState(false);
-    const { message } = App.useApp();
+    const [username, setUsername] = useState("");
+    const [password, setPassword] = useState("");
 
     if (user) return <Navigate to="/" replace />;
 
-    const onFinish = async (values: { username: string; password: string }) => {
+    const onSubmit = async (event: FormEvent) => {
+        event.preventDefault();
         setLoading(true);
         try {
-            await login(values.username, values.password);
+            await login(username, password);
         } catch (error: any) {
             message.error(error.response?.data?.error || "登录失败");
         } finally {
@@ -34,19 +40,20 @@ export default function LoginPage() {
                     <p className="mt-1 text-sm text-stone-500">登录到 Infinite Canvas</p>
                 </div>
                 <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-800 dark:bg-stone-900">
-                    <Form layout="vertical" onFinish={onFinish} requiredMark={false}>
-                        <Form.Item label="用户名" name="username" rules={[{ required: true, message: "请输入用户名" }]}>
-                            <Input size="large" placeholder="用户名" autoComplete="username" />
-                        </Form.Item>
-                        <Form.Item label="密码" name="password" rules={[{ required: true, message: "请输入密码" }]}>
-                            <Input.Password size="large" placeholder="密码" autoComplete="current-password" />
-                        </Form.Item>
-                        <Form.Item className="mb-0">
-                            <Button type="primary" htmlType="submit" size="large" block loading={loading}>
-                                登录
-                            </Button>
-                        </Form.Item>
-                    </Form>
+                    <form onSubmit={onSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="username">用户名</Label>
+                            <Input id="username" className="h-10" placeholder="用户名" autoComplete="username" required value={username} onChange={(e) => setUsername(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="password">密码</Label>
+                            <Input id="password" type="password" className="h-10" placeholder="密码" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                        </div>
+                        <Button type="submit" size="lg" className="w-full" disabled={loading}>
+                            {loading && <Loader2 className="animate-spin" />}
+                            登录
+                        </Button>
+                    </form>
                 </div>
                 <p className="mt-4 text-center text-sm text-stone-500">
                     没有账号？

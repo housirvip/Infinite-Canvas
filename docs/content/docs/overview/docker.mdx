@@ -7,6 +7,15 @@ description: 使用 Docker Compose 部署无限画布
 
 如果你希望在自己的机器或服务器上运行项目，可以直接使用 Docker Compose。
 
+启动前需要提供后端密钥环境变量：
+
+```bash
+export JWT_SECRET="请替换为至少 32 个字符的随机字符串"
+export ENCRYPTION_MASTER_KEY="请替换为 64 位十六进制字符串"
+```
+
+`JWT_SECRET` 用于登录令牌签名；`ENCRYPTION_MASTER_KEY` 用于加密保存到后端的 API Key，部署后不要随意更换。
+
 ## 使用发布镜像
 
 ```bash
@@ -18,7 +27,7 @@ docker compose up -d
 启动后访问：
 
 ```text
-http://localhost:3000
+http://localhost:3040
 ```
 
 ## 本地构建镜像
@@ -49,4 +58,6 @@ docker compose -f docker-compose.local.yml up -d --build
 
 ## 数据说明
 
-当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；第三方提示词由 Next.js route 拉取后缓存在运行实例内存里，不需要额外挂载数据目录。
+当前主应用镜像启动 Go 后端，并由它直接提供前端静态资源和 `/api/v1` 接口。
+
+默认情况下，运行数据保存在容器内的 `/app/data`：SQLite 数据库位于 `/app/data/canvas.db`，上传文件位于 `/app/data/files`。如果你需要在容器重建后保留这些数据，请把 `/app/data` 挂载到宿主机或命名卷。

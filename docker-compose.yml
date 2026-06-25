@@ -2,6 +2,9 @@ services:
   app:
     image: ghcr.io/basketikun/infinite-canvas:latest
     container_name: infinite-canvas
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY}
     ports:
-      - "3300:3000"
+      - "3040:3040"
     restart: unless-stopped

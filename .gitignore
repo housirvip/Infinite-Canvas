@@ -11,4 +11,3 @@ data/
 .codegraph/
 web/dist/
 bun.lock
-go.sum

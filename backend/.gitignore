@@ -2,4 +2,3 @@ bin/
 data/
 config.yaml
 *.db
-go.sum

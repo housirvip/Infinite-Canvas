@@ -22,7 +22,10 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
-import { App, Button, Dropdown, Modal } from "antd";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { message } from "@/lib/message";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "../constants";
 import { ActiveConnectionPath, ConnectionPath } from "../components/canvas-connections";
 import { CanvasConfigComposer } from "../components/canvas-config-composer";
@@ -30,8 +33,10 @@ import { CanvasConfigNodePanel } from "../components/canvas-config-node-panel";
 import { CANVAS_AGENT_PANEL_MOTION_MS, CanvasAssistantPanel } from "../components/canvas-assistant-panel";
 import { CanvasNodeContextMenu } from "../components/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "../components/canvas-node-angle-dialog";
+import { CanvasImageViewer } from "../components/canvas-image-viewer";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "../components/canvas-node-crop-dialog";
 import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "../components/canvas-node-mask-edit-dialog";
+import { CanvasNodeDrawEditDialog } from "../components/canvas-node-draw-edit-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "../components/canvas-node-split-dialog";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "../components/canvas-node-upscale-dialog";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "../components/canvas-node-generation";
@@ -106,7 +111,7 @@ const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
 
-type TaskWaitResult = { files: Array<{ fileId: string; url: string; mimeType: string; size: number }> };
+type TaskWaitResult = { files: Array<{ fileId: string; url: string; mimeType: string; size: number; width?: number; height?: number }> };
 
 function submitTaskAndWait(
     submitFn: () => Promise<{ taskId: string }>,
@@ -260,7 +265,8 @@ function ConnectionCreateOption({ theme, icon, title, description, onClick }: { 
 }
 
 function InfiniteCanvasPage() {
-    const { message, modal } = App.useApp();
+    const [confirmStopOpen, setConfirmStopOpen] = useState(false);
+    const confirmStopNodeIdRef = useRef<string | null>(null);
     const params = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -345,6 +351,7 @@ function InfiniteCanvasPage() {
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
     const [cropNodeId, setCropNodeId] = useState<string | null>(null);
     const [maskEditNodeId, setMaskEditNodeId] = useState<string | null>(null);
+    const [drawEditNodeId, setDrawEditNodeId] = useState<string | null>(null);
     const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
@@ -430,16 +437,10 @@ function InfiniteCanvasPage() {
 
     const confirmStopGeneration = useCallback(
         (nodeId: string) => {
-            modal.confirm({
-                title: "停止生成？",
-                content: "当前生成请求会被中断，已经生成完成的内容会保留。",
-                okText: "停止",
-                cancelText: "继续生成",
-                okButtonProps: { danger: true },
-                onOk: () => stopGenerationByRunningId(nodeId),
-            });
+            confirmStopNodeIdRef.current = nodeId;
+            setConfirmStopOpen(true);
         },
-        [modal, stopGenerationByRunningId],
+        [],
     );
 
     useEffect(() => {
@@ -518,6 +519,8 @@ function InfiniteCanvasPage() {
                                       storageKey: file.fileId,
                                       mimeType: file.mimeType,
                                       bytes: file.size,
+                                      naturalWidth: file.width || n.metadata?.naturalWidth,
+                                      naturalHeight: file.height || n.metadata?.naturalHeight,
                                       status: "success" as const,
                                       progressText: undefined,
                                       progress: undefined,
@@ -784,6 +787,7 @@ function InfiniteCanvasPage() {
     const infoNode = infoNodeId ? nodeById.get(infoNodeId) || null : null;
     const cropNode = cropNodeId ? nodeById.get(cropNodeId) || null : null;
     const maskEditNode = maskEditNodeId ? nodeById.get(maskEditNodeId) || null : null;
+    const drawEditNode = drawEditNodeId ? nodeById.get(drawEditNodeId) || null : null;
     const splitNode = splitNodeId ? nodeById.get(splitNodeId) || null : null;
     const upscaleNode = upscaleNodeId ? nodeById.get(upscaleNodeId) || null : null;
     const superResolveNode = superResolveNodeId ? nodeById.get(superResolveNodeId) || null : null;
@@ -952,6 +956,7 @@ function InfiniteCanvasPage() {
             setInfoNodeId((current) => (current && allIds.has(current) ? null : current));
             setCropNodeId((current) => (current && allIds.has(current) ? null : current));
             setMaskEditNodeId((current) => (current && allIds.has(current) ? null : current));
+            setDrawEditNodeId((current) => (current && allIds.has(current) ? null : current));
             setAngleNodeId((current) => (current && allIds.has(current) ? null : current));
             setPreviewNodeId((current) => (current && allIds.has(current) ? null : current));
             setRunningNodeId((current) => (current && allIds.has(current) ? null : current));
@@ -985,6 +990,7 @@ function InfiniteCanvasPage() {
         setInfoNodeId(null);
         setCropNodeId(null);
         setMaskEditNodeId(null);
+        setDrawEditNodeId(null);
         setAngleNodeId(null);
         setPreviewNodeId(null);
         setRunningNodeId(null);
@@ -1563,6 +1569,7 @@ function InfiniteCanvasPage() {
                 setInfoNodeId(null);
                 setCropNodeId(null);
                 setMaskEditNodeId(null);
+                setDrawEditNodeId(null);
                 setPendingConnectionCreate(null);
             }
         };
@@ -1847,7 +1854,7 @@ function InfiniteCanvasPage() {
                 {
                     id: childId,
                     type: CanvasNodeType.Image,
-                    title: userPrompt.slice(0, 32) || "局部编辑结果",
+                    title: userPrompt.slice(0, 32) || "蒙版修图结果",
                     position: { x: node.position.x + node.width + 96, y: node.position.y },
                     width: node.width,
                     height: node.height,
@@ -1872,12 +1879,12 @@ function InfiniteCanvasPage() {
                 const file = result.files[0];
                 if (!file) throw new Error("未返回生成结果");
                 const url = fileUrl(file.fileId);
-                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: node.width, height: node.height, bytes: file.size, mimeType: file.mimeType };
+                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: file.width || node.width, height: file.height || node.height, bytes: file.size, mimeType: file.mimeType };
                 const size = fitNodeSize(uploaded.width, uploaded.height, node.width, node.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
             } catch (error) {
                 if (isGenerationCanceled(error)) return;
-                const errorDetails = error instanceof Error ? error.message : "局部修改失败";
+                const errorDetails = error instanceof Error ? error.message : "蒙版修图失败";
                 message.error(errorDetails);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
             } finally {
@@ -1886,6 +1893,22 @@ function InfiniteCanvasPage() {
             }
         },
         [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest],
+    );
+
+    const drawEditSaveImage = useCallback(
+        async (node: CanvasNodeData, blob: Blob) => {
+            const image = await uploadImage(blob);
+            setNodes((prev) =>
+                prev.map((n) =>
+                    n.id === node.id
+                        ? { ...n, metadata: { ...n.metadata, ...imageMetadata(image) } }
+                        : n,
+                ),
+            );
+            setDrawEditNodeId(null);
+            message.success("绘图已保存");
+        },
+        [message],
     );
 
     const upscaleImageNode = useCallback(async (node: CanvasNodeData, params: CanvasImageUpscaleParams) => {
@@ -1958,7 +1981,7 @@ function InfiniteCanvasPage() {
                 const file = result.files[0];
                 if (!file) throw new Error("未返回生成结果");
                 const url = fileUrl(file.fileId);
-                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: imageConfig.width, height: imageConfig.height, bytes: file.size, mimeType: file.mimeType };
+                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: file.width || imageConfig.width, height: file.height || imageConfig.height, bytes: file.size, mimeType: file.mimeType };
                 const size = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
             } catch (error) {
@@ -2249,7 +2272,7 @@ function InfiniteCanvasPage() {
                                 const file = result.files[0];
                                 if (!file) throw new Error("未返回生成结果");
                                 const url = fileUrl(file.fileId);
-                                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: imageConfig.width, height: imageConfig.height, bytes: file.size, mimeType: file.mimeType };
+                                const uploaded: UploadedImage = { url, storageKey: file.fileId, width: file.width || imageConfig.width, height: file.height || imageConfig.height, bytes: file.size, mimeType: file.mimeType };
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
                                 setNodes((prev) => {
                                     const root = prev.find((node) => node.id === rootId);
@@ -2543,6 +2566,8 @@ function InfiniteCanvasPage() {
                     id: nanoid(),
                     url: fileUrl(f.fileId),
                     storageKey: f.fileId,
+                    width: f.width,
+                    height: f.height,
                     bytes: f.size,
                     mimeType: f.mimeType,
                 }));
@@ -2585,6 +2610,8 @@ function InfiniteCanvasPage() {
                     id: nanoid(),
                     url: fileUrl(f.fileId),
                     storageKey: f.fileId,
+                    width: f.width,
+                    height: f.height,
                     bytes: f.size,
                     mimeType: f.mimeType,
                 }));
@@ -2649,6 +2676,18 @@ function InfiniteCanvasPage() {
                     metadata: { content: result.text, status: "success", fontSize: 14 },
                 });
                 offsetY += 280;
+            } else if (result.type === "audio") {
+                const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Audio];
+                newNodes.push({
+                    id: nanoid(),
+                    type: CanvasNodeType.Audio,
+                    title: "RunningHub 生成",
+                    position: { x: offsetX, y: offsetY },
+                    width: spec.width,
+                    height: spec.height,
+                    metadata: { content: contentUrl, status: "success", storageKey: result.storageKey, bytes: result.bytes, mimeType: result.mimeType, durationMs: result.durationMs },
+                });
+                offsetY += spec.height + 40;
             }
         }
 
@@ -3002,7 +3041,6 @@ function InfiniteCanvasPage() {
                             batchOpening={openingBatchIds.has(node.id)}
                             batchRecovering={collapsingBatchIds.has(node.id)}
                             batchMotion={batchMotionById.get(node.id)}
-                            showImageInfo={showImageInfo}
                             resourceLabel={resourceReferenceByNodeId.get(node.id)}
                             mentionReferences={mentionReferencesByNodeId.get(node.id) || []}
                             renderPanel={(panelNode) =>
@@ -3116,6 +3154,7 @@ function InfiniteCanvasPage() {
                     onDownload={downloadNodeImage}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
                     onMaskEdit={(node) => setMaskEditNodeId(node.id)}
+                    onDrawEdit={(node) => setDrawEditNodeId(node.id)}
                     onCrop={(node) => setCropNodeId(node.id)}
                     onSplit={(node) => setSplitNodeId(node.id)}
                     onUpscale={(node) => setUpscaleNodeId(node.id)}
@@ -3185,50 +3224,50 @@ function InfiniteCanvasPage() {
 
                 {maskEditNode?.metadata?.content ? <CanvasNodeMaskEditDialog dataUrl={maskEditNode.metadata.content} open={Boolean(maskEditNode)} onClose={() => setMaskEditNodeId(null)} onConfirm={(payload) => void maskEditImageNode(maskEditNode!, payload)} /> : null}
 
+                {drawEditNode?.metadata?.content ? <CanvasNodeDrawEditDialog dataUrl={drawEditNode.metadata.content} open={Boolean(drawEditNode)} onClose={() => setDrawEditNodeId(null)} onConfirm={(blob) => void drawEditSaveImage(drawEditNode!, blob)} /> : null}
+
                 {splitNode?.metadata?.content ? <CanvasNodeSplitDialog dataUrl={splitNode.metadata.content} open={Boolean(splitNode)} onClose={() => setSplitNodeId(null)} onConfirm={(params) => void splitImageNode(splitNode!, params)} /> : null}
 
                 {upscaleNode?.metadata?.content ? <CanvasNodeUpscaleDialog dataUrl={upscaleNode.metadata.content} open={Boolean(upscaleNode)} onClose={() => setUpscaleNodeId(null)} onConfirm={(params) => void upscaleImageNode(upscaleNode!, params)} /> : null}
 
-                <Modal title="AI 超分" open={Boolean(superResolveNode?.metadata?.content)} centered footer={null} onCancel={() => setSuperResolveNodeId(null)}>
-                    <div className="py-8 text-center text-base font-medium">暂未实现</div>
-                </Modal>
+                <Dialog open={Boolean(superResolveNode?.metadata?.content)} onOpenChange={(v) => !v && setSuperResolveNodeId(null)}>
+                    <DialogContent>
+                        <DialogHeader><DialogTitle>AI 超分</DialogTitle></DialogHeader>
+                        <div className="py-8 text-center text-base font-medium">暂未实现</div>
+                    </DialogContent>
+                </Dialog>
 
                 {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(params) => void generateAngleNode(angleNode!, params)} /> : null}
 
-                <Modal
-                    title="图片详情"
-                    open={Boolean(previewNode?.metadata?.content)}
-                    centered
-                    onCancel={() => setPreviewNodeId(null)}
-                    footer={null}
-                    width="auto"
-                    styles={{ body: { padding: 0, display: "flex", justifyContent: "center", alignItems: "center", maxHeight: "80vh" } }}
-                >
-                    {previewNode?.metadata?.content ? (
-                        <img
-                            src={previewNode.metadata.content}
-                            alt={previewNode.title || "图片"}
-                            style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }}
-                        />
-                    ) : null}
-                </Modal>
+                {previewNode?.metadata?.content ? (
+                    <CanvasImageViewer
+                        node={previewNode}
+                        inputImageUrl={findUpstreamImageUrl(previewNode.id, nodes, connections)}
+                        onClose={() => setPreviewNodeId(null)}
+                    />
+                ) : null}
 
-                <Modal
-                    title="清空画布？"
-                    open={clearConfirmOpen}
-                    centered
-                    onCancel={() => setClearConfirmOpen(false)}
-                    footer={
-                        <>
-                            <Button onClick={() => setClearConfirmOpen(false)}>取消</Button>
-                            <Button danger type="primary" onClick={clearCanvas}>
-                                清空
-                            </Button>
-                        </>
-                    }
-                >
-                    <p className="text-sm opacity-60">这会删除当前画布上的所有节点和连线。</p>
-                </Modal>
+                <Dialog open={clearConfirmOpen} onOpenChange={(v) => !v && setClearConfirmOpen(false)}>
+                    <DialogContent>
+                        <DialogHeader><DialogTitle>清空画布？</DialogTitle></DialogHeader>
+                        <p className="text-sm opacity-60">这会删除当前画布上的所有节点和连线。</p>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setClearConfirmOpen(false)}>取消</Button>
+                            <Button variant="destructive" onClick={clearCanvas}>清空</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                <Dialog open={confirmStopOpen} onOpenChange={(v) => !v && setConfirmStopOpen(false)}>
+                    <DialogContent>
+                        <DialogHeader><DialogTitle>停止生成？</DialogTitle></DialogHeader>
+                        <p className="text-sm opacity-60">当前生成请求会被中断，已经生成完成的内容会保留。</p>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setConfirmStopOpen(false)}>继续生成</Button>
+                            <Button variant="destructive" onClick={() => { stopGenerationByRunningId(confirmStopNodeIdRef.current!); setConfirmStopOpen(false); }}>停止</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 <AssetPickerModal open={assetPickerOpen} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} />
                 {codexCompactAgent && !assistantMounted ? <CanvasLocalAgentPanel headless snapshot={agentSnapshot} canUndoOps={Boolean(agentUndoSnapshot)} onApplyOps={applyAgentOps} onUndoOps={undoAgentOps} autoConnect={codexAutoConnect} /> : null}
@@ -3316,28 +3355,26 @@ function CanvasTopBar({
         <>
             <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between px-4">
                 <div className="pointer-events-auto flex min-w-0 items-center gap-3">
-                    <Dropdown
-                        trigger={["click"]}
-                        menu={{
-                            items: [
-                                { key: "home", icon: <Home className="size-4" />, label: "主页", onClick: onHome },
-                                { key: "docs", icon: <BookOpen className="size-4" />, label: "文档", onClick: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer") },
-                                { key: "projects", icon: <Images className="size-4" />, label: "我的画布", onClick: onProjects },
-                                { type: "divider" },
-                                { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },
-                                { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: "删除当前画布", onClick: onDeleteProject },
-                                { type: "divider" },
-                                { key: "import", icon: <Upload className="size-4" />, label: "导入素材", onClick: onImportImage },
-                                { type: "divider" },
-                                { key: "undo", disabled: !canUndo, icon: <Undo2 className="size-4" />, label: <MenuLabel text="撤销" shortcut="⌘ Z" />, onClick: onUndo },
-                                { key: "redo", disabled: !canRedo, icon: <Redo2 className="size-4" />, label: <MenuLabel text="重做" shortcut="⌘ ⇧ Z / ⌘ Y" />, onClick: onRedo },
-                            ],
-                        }}
-                    >
-                        <button type="button" className="grid size-9 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} aria-label="打开画布菜单">
-                            <Menu className="size-5" />
-                        </button>
-                    </Dropdown>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button type="button" className="grid size-9 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10" style={{ color: theme.node.text }} aria-label="打开画布菜单">
+                                <Menu className="size-5" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                            <DropdownMenuItem onClick={onHome}><Home className="size-4" /> 主页</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => window.open(DOCS_URL, "_blank", "noopener,noreferrer")}><BookOpen className="size-4" /> 文档</DropdownMenuItem>
+                            <DropdownMenuItem onClick={onProjects}><Images className="size-4" /> 我的画布</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={onCreateProject}><Plus className="size-4" /> 新建画布</DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={onDeleteProject}><Trash2 className="size-4" /> 删除当前画布</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={onImportImage}><Upload className="size-4" /> 导入素材</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem disabled={!canUndo} onClick={onUndo}><Undo2 className="size-4" /> <MenuLabel text="撤销" shortcut="⌘ Z" /></DropdownMenuItem>
+                            <DropdownMenuItem disabled={!canRedo} onClick={onRedo}><Redo2 className="size-4" /> <MenuLabel text="重做" shortcut="⌘ ⇧ Z / ⌘ Y" /></DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
 
                     <div ref={titleRef} className="flex min-w-0 items-center gap-2">
                         {isTitleEditing ? (
@@ -3367,41 +3404,33 @@ function CanvasTopBar({
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
-                    {compactAgentStatus ? <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} /> : null}
                     <UserStatusActions
                         variant="canvas"
                         onOpenShortcuts={() => setShortcutsOpen(true)}
                     />
-                    <span className="h-6 w-px" style={{ background: theme.toolbar.border }} />
-                    <Button
-                        type="text"
-                        className="!h-10 !rounded-xl !px-3 !font-medium"
-                        style={{ background: agentOpen ? theme.toolbar.activeBg : theme.toolbar.panel, color: theme.node.text, boxShadow: "0 10px 30px rgba(28,25,23,.10)" }}
-                        icon={<Bot className="size-4" />}
-                        onClick={onToggleAgent}
-                    >
-                        Agent
-                    </Button>
                 </div>
             </div>
-            <Modal title="快捷键" open={shortcutsOpen} onCancel={() => setShortcutsOpen(false)} footer={null} centered>
-                <div className="space-y-2 border-t pt-4 text-sm" style={{ borderColor: theme.node.stroke }}>
-                    <Shortcut keys={["拖动画布"]} value="平移视图" />
-                    <Shortcut keys={["滚轮"]} value="缩放画布" />
-                    <Shortcut keys={["缩放滑杆"]} value="精确调整缩放" />
-                    <Shortcut keys={["Ctrl / Cmd", "拖动"]} value="框选多个节点" />
-                    <Shortcut keys={["Shift / Ctrl / Cmd", "点击"]} value="追加选择节点" />
-                    <Shortcut keys={["Ctrl / Cmd", "A"]} value="全选节点" />
-                    <Shortcut keys={["Ctrl / Cmd", "C / V"]} value="复制 / 粘贴节点，或粘贴剪切板文本/图片" />
-                    <Shortcut keys={["Ctrl / Cmd", "S"]} value="手动保存画布" />
-                    <Shortcut keys={["Ctrl / Cmd", "Z"]} value="撤销" />
-                    <Shortcut keys={["Ctrl / Cmd", "Shift", "Z"]} value="重做" />
-                    <Shortcut keys={["Ctrl / Cmd", "Y"]} value="重做" />
-                    <Shortcut keys={["Delete / Backspace"]} value="删除选中" />
-                    <Shortcut keys={["Esc"]} value="取消选择并关闭浮层" />
-                    <Shortcut keys={["拖入图片/视频/音频"]} value="上传到画布" />
-                </div>
-            </Modal>
+            <Dialog open={shortcutsOpen} onOpenChange={(v) => !v && setShortcutsOpen(false)}>
+                <DialogContent>
+                    <DialogHeader><DialogTitle>快捷键</DialogTitle></DialogHeader>
+                    <div className="space-y-2 border-t pt-4 text-sm" style={{ borderColor: theme.node.stroke }}>
+                        <Shortcut keys={["拖动画布"]} value="平移视图" />
+                        <Shortcut keys={["滚轮"]} value="缩放画布" />
+                        <Shortcut keys={["缩放滑杆"]} value="精确调整缩放" />
+                        <Shortcut keys={["Ctrl / Cmd", "拖动"]} value="框选多个节点" />
+                        <Shortcut keys={["Shift / Ctrl / Cmd", "点击"]} value="追加选择节点" />
+                        <Shortcut keys={["Ctrl / Cmd", "A"]} value="全选节点" />
+                        <Shortcut keys={["Ctrl / Cmd", "C / V"]} value="复制 / 粘贴节点，或粘贴剪切板文本/图片" />
+                        <Shortcut keys={["Ctrl / Cmd", "S"]} value="手动保存画布" />
+                        <Shortcut keys={["Ctrl / Cmd", "Z"]} value="撤销" />
+                        <Shortcut keys={["Ctrl / Cmd", "Shift", "Z"]} value="重做" />
+                        <Shortcut keys={["Ctrl / Cmd", "Y"]} value="重做" />
+                        <Shortcut keys={["Delete / Backspace"]} value="删除选中" />
+                        <Shortcut keys={["Esc"]} value="取消选择并关闭浮层" />
+                        <Shortcut keys={["拖入图片/视频/音频"]} value="上传到画布" />
+                    </div>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }
@@ -3743,4 +3772,25 @@ function resolveUpstreamMapping<T>(
     }
 
     return result;
+}
+
+function findUpstreamImageUrl(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): string | undefined {
+    const visited = new Set<string>();
+    const queue = [nodeId];
+    while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (visited.has(current)) continue;
+        visited.add(current);
+        const upstreams = connections
+            .filter((c) => c.toNodeId === current)
+            .map((c) => nodes.find((n) => n.id === c.fromNodeId))
+            .filter((n): n is CanvasNodeData => Boolean(n));
+        for (const n of upstreams) {
+            if (n.type === CanvasNodeType.Image && n.metadata?.content && n.id !== nodeId) {
+                return n.metadata.content;
+            }
+            queue.push(n.id);
+        }
+    }
+    return undefined;
 }

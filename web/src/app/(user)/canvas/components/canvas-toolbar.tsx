@@ -1,6 +1,8 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
-import { Button, Segmented, Switch } from "antd";
+import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
 import { CircleDot, Eraser, FolderOpen, Grid2x2, Hand, Image as ImageIcon, Info, Moon, Music2, Palette, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
@@ -93,7 +95,7 @@ export function CanvasToolbar({
                     <Settings2 className="size-4.5" />
                 </ToolbarButton>
                 <ToolbarButton id="tool-runninghub" label="RunningHub" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddRunningHub}>
-                    <span className="text-sm font-bold leading-none">R</span>
+                    <span className="text-sm font-bold leading-none">RH</span>
                 </ToolbarButton>
                 <ToolbarButton id="tool-upload" label="上传素材" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onUpload}>
                     <Upload className="size-4.5" />
@@ -152,7 +154,7 @@ export function CanvasToolbar({
                     </div>
                     <div className="mt-3 px-1 pb-1.5 text-[11px] font-medium opacity-50">网格样式</div>
                     <Segmented
-                        className="w-full !p-1 [&_.ant-segmented-group]:!flex [&_.ant-segmented-item]:!min-h-8 [&_.ant-segmented-item]:!flex-1 [&_.ant-segmented-item-label]:!min-h-8 [&_.ant-segmented-item-label]:!leading-8"
+                        className="w-full !p-1"
                         value={backgroundMode}
                         onChange={(value) => onBackgroundModeChange(value as CanvasBackgroundMode)}
                         options={[
@@ -188,7 +190,7 @@ export function CanvasToolbar({
                             <Info className="size-3.5" />
                             图片信息
                         </span>
-                        <Switch size="small" checked={showImageInfo} onChange={onShowImageInfoChange} />
+                        <Switch checked={showImageInfo} onCheckedChange={onShowImageInfoChange} />
                     </div>
                 </div>
             ) : null}
@@ -229,19 +231,21 @@ function ToolbarButton({
 
     return (
         <Button
-            type="text"
+            variant="ghost"
+            size="icon"
             aria-label={label}
             className="!h-8 !w-8 !min-w-8 !p-0"
             disabled={disabled}
             style={active ? activeStyle : hovered === id && !disabled ? hoverStyle : { color: danger ? "#f87171" : theme.toolbar.item, opacity: disabled ? 0.35 : 1 }}
-            icon={children}
             onMouseEnter={(event) => {
                 onHover(id);
                 onTipX(getTipX(wrapRef.current, event.currentTarget));
             }}
             onMouseLeave={() => onHover(null)}
             onClick={onClick}
-        />
+        >
+            {children}
+        </Button>
     );
 }
 

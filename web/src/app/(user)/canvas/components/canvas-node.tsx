@@ -24,7 +24,6 @@ type CanvasNodeProps = {
     isConnecting: boolean;
     editRequestNonce?: number;
     showPanel: boolean;
-    showImageInfo: boolean;
     resourceLabel?: CanvasResourceReference;
     mentionReferences?: CanvasResourceReference[];
     renderPanel?: (node: CanvasNodeData) => ReactNode;
@@ -79,7 +78,6 @@ export const CanvasNode = React.memo(function CanvasNode({
     isConnecting,
     editRequestNonce = 0,
     showPanel,
-    showImageInfo,
     resourceLabel,
     mentionReferences = [],
     renderPanel,
@@ -314,7 +312,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     />
                 </div>
 
-                {showImageInfo && hasImageContent ? <ImageInfoBar node={data} /> : null}
+                {hasImageContent ? <ImageInfoBar node={data} /> : null}
                 {resourceLabel ? <ResourceLabelBadge reference={resourceLabel} /> : null}
 
                 {!hasImageContent && !hasVideoContent && !hasAudioContent ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12" style={{ background: `linear-gradient(to top, ${theme.canvas.background}66, transparent)` }} /> : null}
@@ -637,16 +635,41 @@ function ImageContent({
 }
 
 function ImageInfoBar({ node }: { node: CanvasNodeData }) {
-    const width = Math.round(node.metadata?.naturalWidth || node.width);
-    const height = Math.round(node.metadata?.naturalHeight || node.height);
-    const size = formatBytes(node.metadata?.bytes || 0);
+    const [measured, setMeasured] = useState<{ w: number; h: number; bytes: number } | null>(null);
+    const contentUrl = node.metadata?.content;
+
+    useEffect(() => {
+        if (node.metadata?.naturalWidth && node.metadata?.naturalHeight) {
+            setMeasured({ w: node.metadata.naturalWidth, h: node.metadata.naturalHeight, bytes: node.metadata.bytes || 0 });
+            return;
+        }
+        if (!contentUrl) return;
+        const img = new window.Image();
+        img.onload = () => {
+            let bytes = node.metadata?.bytes || 0;
+            if (!bytes && contentUrl.startsWith("data:")) {
+                const base64 = contentUrl.split(",")[1];
+                if (base64) bytes = Math.round((base64.length * 3) / 4);
+            }
+            setMeasured({ w: img.naturalWidth, h: img.naturalHeight, bytes });
+        };
+        img.src = contentUrl;
+    }, [contentUrl, node.metadata?.naturalWidth, node.metadata?.naturalHeight, node.metadata?.bytes]);
+
+    if (!measured) return null;
+
+    const size = formatBytes(measured.bytes);
     return (
-        <div className="pointer-events-none absolute bottom-3 right-3 z-40 max-w-[calc(100%-24px)]">
-            <span className="max-w-full truncate rounded-md bg-black/55 px-2 py-1 text-[11px] font-medium leading-none text-white backdrop-blur-sm">
-                {width} x {height}
-                {size ? ` · ${size}` : ""}
+        <>
+            <span className="pointer-events-none absolute bottom-2 left-2 z-30 rounded-md bg-black/35 px-1.5 py-0.5 text-[10px] font-medium text-white/75">
+                {measured.w} x {measured.h}
             </span>
-        </div>
+            {size ? (
+                <span className="pointer-events-none absolute bottom-2 right-2 z-30 rounded-md bg-black/35 px-1.5 py-0.5 text-[10px] font-medium text-white/75">
+                    {size}
+                </span>
+            ) : null}
+        </>
     );
 }
 

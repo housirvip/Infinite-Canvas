@@ -40,12 +40,40 @@ type CanvasStore = {
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 
+const TRANSIENT_NODE_FIELDS = new Set(["progress", "progressText", "taskProvider"]);
+
+function stripTransientFields(node: CanvasNodeData): CanvasNodeData {
+    if (!node.metadata) return node;
+    const { progress, progressText, taskProvider, ...rest } = node.metadata;
+    return { ...node, metadata: rest };
+}
+
+function hasNonTransientChanges(prev: CanvasNodeData[], next: CanvasNodeData[]): boolean {
+    if (prev.length !== next.length) return true;
+    for (let i = 0; i < next.length; i++) {
+        const p = prev[i];
+        const n = next[i];
+        if (p.id !== n.id || p.type !== n.type || p.title !== n.title) return true;
+        if (p.position.x !== n.position.x || p.position.y !== n.position.y) return true;
+        if (p.width !== n.width || p.height !== n.height) return true;
+        const pm = p.metadata || {};
+        const nm = n.metadata || {};
+        const pmKeys = Object.keys(pm).filter((k) => !TRANSIENT_NODE_FIELDS.has(k));
+        const nmKeys = Object.keys(nm).filter((k) => !TRANSIENT_NODE_FIELDS.has(k));
+        if (pmKeys.length !== nmKeys.length) return true;
+        for (const k of nmKeys) {
+            if ((pm as any)[k] !== (nm as any)[k]) return true;
+        }
+    }
+    return false;
+}
+
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSaves = new Map<string, Record<string, any>>();
 
 function buildProjectSavePatch(patch: CanvasProjectPatch): Record<string, any> {
     const savePatch: Record<string, any> = {};
-    if (patch.nodes !== undefined) savePatch.nodes = patch.nodes;
+    if (patch.nodes !== undefined) savePatch.nodes = patch.nodes.map(stripTransientFields);
     if (patch.connections !== undefined) savePatch.connections = patch.connections;
     if (patch.chatSessions !== undefined) savePatch.chatSessions = patch.chatSessions;
     if (patch.activeChatId !== undefined) savePatch.activeChatId = patch.activeChatId;
@@ -86,7 +114,7 @@ function debouncedSave(projectId: string, patch: Record<string, any>) {
         saves.forEach((data, id) => {
             projectApi.updateProject(id, data).catch((err) => console.error("[canvas-save] update failed:", id, err?.response?.status, err?.response?.data || err.message));
         });
-    }, 400);
+    }, 1000);
 }
 
 export const useCanvasStore = create<CanvasStore>()((set, get) => ({
@@ -188,9 +216,11 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
     replaceProjects: (projects) => set({ projects }),
 
     updateProject: (id, patch) => {
+        const prev = get().projects.find((p) => p.id === id);
         set((state) => ({
             projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
         }));
+        if (patch.nodes && prev && !hasNonTransientChanges(prev.nodes, patch.nodes)) return;
         debouncedSave(id, buildProjectSavePatch(patch));
     },
 

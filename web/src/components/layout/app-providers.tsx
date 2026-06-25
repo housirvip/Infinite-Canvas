@@ -24,6 +24,7 @@ const queryClient = new QueryClient({
 
 export function AppProviders({ children }: { children: ReactNode }) {
     const theme = useThemeStore((state) => state.theme);
+    const accent = useThemeStore((state) => state.accent);
     const dark = theme === "dark";
     const userId = useUserStore((state) => state.user?.id ?? null);
     const authReady = useUserStore((state) => state.authReady);
@@ -33,9 +34,15 @@ export function AppProviders({ children }: { children: ReactNode }) {
     const fetchRunningHubConfigFromServer = useRunningHubStore((state) => state.fetchConfigFromServer);
 
     useEffect(() => {
-        document.documentElement.classList.toggle("dark", dark);
-        document.documentElement.style.colorScheme = theme;
-    }, [dark, theme]);
+        const root = document.documentElement;
+        root.classList.toggle("dark", dark);
+        root.style.colorScheme = theme;
+        if (accent === "neutral") {
+            delete root.dataset.accent;
+        } else {
+            root.dataset.accent = accent;
+        }
+    }, [dark, theme, accent]);
 
     useEffect(() => {
         if (!authReady || !userId) {

@@ -1,9 +1,9 @@
 import { type CSSProperties, type ReactNode, useState } from "react";
-import { BookOpen, Keyboard, Settings2 } from "lucide-react";
+import { BookOpen, Keyboard, Palette, Settings2 } from "lucide-react";
 
-import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { GitHubLink } from "@/components/layout/github-link";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
+import { ThemePicker } from "@/components/ui/theme-picker";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DOCS_URL } from "@/constant/env";
 import { cn } from "@/lib/utils";
@@ -57,7 +57,6 @@ function StatusButton({ label, hovered, onHover, style, hoverStyle, className, o
 
 export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts }: UserStatusActionsProps) {
     const theme = useThemeStore((state) => state.theme);
-    const setTheme = useThemeStore((state) => state.setTheme);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const openRunningHubDialog = useRunningHubStore((state) => state.openDialog);
     const canvasTheme = canvasThemes[theme];
@@ -82,18 +81,21 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 <span className="text-xs font-bold leading-none" aria-hidden="true">RH</span>
             </StatusButton>
             <Tooltip>
-                <TooltipTrigger asChild>
-                    <AnimatedThemeToggler
-                        theme={theme}
-                        onThemeChange={setTheme}
-                        className={btnBase}
-                        style={hovered === "theme" ? hoverStyle : baseStyle}
-                        onMouseEnter={() => setHovered("theme")}
-                        onMouseLeave={() => setHovered(null)}
-                        aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
-                    />
-                </TooltipTrigger>
-                <TooltipContent side="bottom" sideOffset={6}>{theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}</TooltipContent>
+                <ThemePicker>
+                    <TooltipTrigger asChild>
+                        <button
+                            type="button"
+                            className={btnBase}
+                            style={hovered === "theme" ? hoverStyle : baseStyle}
+                            onMouseEnter={() => setHovered("theme")}
+                            onMouseLeave={() => setHovered(null)}
+                            aria-label="主题设置"
+                        >
+                            <Palette className="size-4" />
+                        </button>
+                    </TooltipTrigger>
+                </ThemePicker>
+                <TooltipContent side="bottom" sideOffset={6}>主题设置</TooltipContent>
             </Tooltip>
             <Tooltip>
                 <TooltipTrigger asChild>

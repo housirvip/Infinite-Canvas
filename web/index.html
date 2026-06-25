@@ -6,7 +6,7 @@
     <title>无限画布</title>
     <meta name="description" content="一个无限画布创作工具" />
     <script>
-        try{var s=JSON.parse(localStorage.getItem("infinite-canvas:theme_store")||"{}");var t=s.state&&s.state.theme==="light"?"light":"dark";document.documentElement.classList.toggle("dark",t==="dark");document.documentElement.style.colorScheme=t}catch(e){}
+        try{var s=JSON.parse(localStorage.getItem("infinite-canvas:theme_store")||"{}").state||{};var t=s.theme==="light"?"light":"dark";document.documentElement.classList.toggle("dark",t==="dark");document.documentElement.style.colorScheme=t;if(s.accent&&s.accent!=="neutral")document.documentElement.dataset.accent=s.accent}catch(e){}
     </script>
 </head>
 <body

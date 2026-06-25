@@ -9,7 +9,6 @@ export type TransitionVariant = "circle" | "square" | "triangle" | "diamond" | "
 interface AnimatedThemeTogglerProps extends React.ComponentPropsWithoutRef<"button"> {
     duration?: number;
     variant?: TransitionVariant;
-    /** When true, the transition expands from the viewport center instead of the button center. */
     fromCenter?: boolean;
     theme?: "light" | "dark";
     targetTheme?: "light" | "dark";
@@ -39,7 +38,6 @@ function getThemeTransitionClipPaths(variant: TransitionVariant, cx: number, cy:
             return [polygonCollapsed(cx, cy, 3), `polygon(${verts})`];
         }
         case "diamond": {
-            // Slightly larger than the view-transition circle radius so axis-aligned coverage matches the circle reveal.
             const R = maxRadius * Math.SQRT2;
             const end = [`${cx}px ${cy - R}px`, `${cx + R}px ${cy}px`, `${cx}px ${cy + R}px`, `${cx - R}px ${cy}px`].join(", ");
             return [polygonCollapsed(cx, cy, 4), `polygon(${end})`];
@@ -60,7 +58,6 @@ function getThemeTransitionClipPaths(variant: TransitionVariant, cx: number, cy:
             return [polygonCollapsed(cx, cy, 4), `polygon(${end})`];
         }
         case "star": {
-            // Small overscan so the last frames never leave a 1px seam before the transition group ends.
             const R = maxRadius * Math.SQRT2 * 1.03;
             const innerRatio = 0.42;
             const starPolygon = (radius: number) => {
@@ -83,7 +80,7 @@ function getThemeTransitionClipPaths(variant: TransitionVariant, cx: number, cy:
 
 export const AnimatedThemeToggler = ({ children, className, duration = 400, variant, fromCenter = false, theme, targetTheme, onThemeChange, ...props }: AnimatedThemeTogglerProps) => {
     const shape = variant ?? "circle";
-    const [isDark, setIsDark] = useState(false);
+    const [isDark, setIsDark] = useState(theme === "dark");
     const buttonRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
@@ -111,6 +108,9 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
         const button = buttonRef.current;
         if (!button) return;
 
+        const nextTheme = targetTheme ?? (isDark ? "light" : "dark");
+        if (nextTheme === (isDark ? "dark" : "light")) return;
+
         const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
         const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
 
@@ -126,9 +126,6 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
         }
 
         const maxRadius = Math.hypot(Math.max(x, viewportWidth - x), Math.max(y, viewportHeight - y));
-
-        const nextTheme = targetTheme ?? (isDark ? "light" : "dark");
-        if (nextTheme === (isDark ? "dark" : "light")) return;
 
         const applyTheme = () => {
             setIsDark(nextTheme === "dark");
@@ -154,15 +151,13 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
             root.style.removeProperty("--magicui-theme-vt-clip-from");
         };
 
-        let applied = false;
         try {
             const transition = document.startViewTransition(() => {
-                applied = true;
                 flushSync(applyTheme);
             });
-            transition?.finished?.finally(cleanup).catch(() => {});
-            transition?.ready
-                ?.then(() => {
+            transition.finished.finally(cleanup);
+            transition.ready
+                .then(() => {
                     document.documentElement.animate(
                         { clipPath },
                         {
@@ -176,7 +171,7 @@ export const AnimatedThemeToggler = ({ children, className, duration = 400, vari
                 .catch(() => {});
         } catch {
             cleanup();
-            if (!applied) applyTheme();
+            applyTheme();
         }
     }, [shape, fromCenter, duration, isDark, targetTheme, onThemeChange]);
 

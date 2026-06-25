@@ -1,18 +1,25 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ThemeName = "light" | "dark";
+export type ThemeMode = "light" | "dark";
+export type ThemeAccent = "neutral" | "blue" | "purple" | "rose";
 
 type ThemeStore = {
-    theme: ThemeName;
-    setTheme: (theme: ThemeName) => void;
+    theme: ThemeMode;
+    accent: ThemeAccent;
+    setTheme: (theme: ThemeMode) => void;
+    setAccent: (accent: ThemeAccent) => void;
+    toggleTheme: () => void;
 };
 
 export const useThemeStore = create<ThemeStore>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             theme: "dark",
+            accent: "neutral",
             setTheme: (theme) => set({ theme }),
+            setAccent: (accent) => set({ accent }),
+            toggleTheme: () => set({ theme: get().theme === "dark" ? "light" : "dark" }),
         }),
         { name: "infinite-canvas:theme_store" },
     ),

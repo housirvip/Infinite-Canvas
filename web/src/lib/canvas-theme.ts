@@ -1,3 +1,5 @@
+import type { ThemeAccent, ThemeMode } from "@/stores/use-theme-store";
+
 export type CanvasColorTheme = "light" | "dark";
 export type CanvasBackgroundMode = "dots" | "lines" | "blank";
 
@@ -61,3 +63,44 @@ export const canvasThemes = {
 } as const;
 
 export type CanvasTheme = (typeof canvasThemes)[CanvasColorTheme];
+
+export const accentColors: Record<ThemeAccent, { light: { highlight: string; highlightFill: string }; dark: { highlight: string; highlightFill: string }; swatch: string }> = {
+    neutral: {
+        light: { highlight: "#1c1917", highlightFill: "rgba(28,25,23,.06)" },
+        dark: { highlight: "#fafaf9", highlightFill: "rgba(250,250,249,.10)" },
+        swatch: "#78716c",
+    },
+    blue: {
+        light: { highlight: "#2563eb", highlightFill: "rgba(37,99,235,.08)" },
+        dark: { highlight: "#60a5fa", highlightFill: "rgba(96,165,250,.12)" },
+        swatch: "#3b82f6",
+    },
+    purple: {
+        light: { highlight: "#7c3aed", highlightFill: "rgba(124,58,237,.08)" },
+        dark: { highlight: "#a78bfa", highlightFill: "rgba(167,139,250,.12)" },
+        swatch: "#8b5cf6",
+    },
+    rose: {
+        light: { highlight: "#e11d48", highlightFill: "rgba(225,29,72,.08)" },
+        dark: { highlight: "#fb7185", highlightFill: "rgba(251,113,133,.12)" },
+        swatch: "#f43f5e",
+    },
+};
+
+export function getAccentedCanvasTheme(mode: ThemeMode, accent: ThemeAccent) {
+    const base = canvasThemes[mode];
+    if (accent === "neutral") return base;
+    const colors = accentColors[accent][mode];
+    return {
+        ...base,
+        canvas: {
+            ...base.canvas,
+            selectionStroke: colors.highlight,
+            selectionFill: colors.highlightFill,
+        },
+        node: {
+            ...base.node,
+            activeStroke: colors.highlight,
+        },
+    };
+}

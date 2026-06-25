@@ -105,6 +105,7 @@ func (p *AudioProvider) Execute(ctx context.Context, task *model.Task, apiKey st
 			FileID:   fileID,
 			URL:      fileURL,
 			MimeType: mimeType,
+			Size:     len(audioData),
 		}},
 	}, nil
 }

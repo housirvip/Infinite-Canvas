@@ -122,11 +122,16 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 				continue
 			}
 
-			execResult.Files = append(execResult.Files, ResultFile{
+			rf := ResultFile{
 				FileID:   fID,
 				URL:      url,
 				MimeType: mimeType,
-			})
+				Size:     len(data),
+			}
+			if isImageOutput(r.OutputType) {
+				rf.Width, rf.Height = ImageDimensions(data)
+			}
+			execResult.Files = append(execResult.Files, rf)
 		} else if r.Text != "" {
 			execResult.Text += r.Text + "\n"
 		}

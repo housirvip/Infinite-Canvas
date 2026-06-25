@@ -84,6 +84,7 @@ func (p *OpenAIVideoProvider) Execute(ctx context.Context, task *model.Task, api
 			FileID:   fileID,
 			URL:      url,
 			MimeType: "video/mp4",
+			Size:     len(videoData),
 		}},
 	}, nil
 }

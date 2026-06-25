@@ -83,6 +83,7 @@ func (p *SeedanceVideoProvider) Execute(ctx context.Context, task *model.Task, a
 			FileID:   fileID,
 			URL:      url,
 			MimeType: "video/mp4",
+			Size:     len(videoData),
 		}},
 	}, nil
 }

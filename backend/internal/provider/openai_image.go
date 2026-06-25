@@ -76,10 +76,14 @@ func (p *OpenAIImageProvider) Execute(ctx context.Context, task *model.Task, api
 		if err != nil {
 			return nil, fmt.Errorf("failed to save image: %w", err)
 		}
+		w, h := ImageDimensions(imgData)
 		result.Files = append(result.Files, ResultFile{
 			FileID:   fileID,
 			URL:      url,
 			MimeType: "image/png",
+			Size:     len(imgData),
+			Width:    w,
+			Height:   h,
 		})
 	}
 

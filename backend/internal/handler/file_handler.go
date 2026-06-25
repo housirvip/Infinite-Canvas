@@ -3,10 +3,12 @@ package handler
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 
+	"github.com/infinite-canvas/backend/internal/provider"
 	"github.com/infinite-canvas/backend/internal/storage"
 )
 
@@ -51,13 +53,23 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"fileId":   fileID,
 		"url":      url,
 		"mimeType": mimeType,
 		"size":     len(data),
 		"filename": header.Filename,
-	})
+	}
+
+	if strings.HasPrefix(mimeType, "image/") {
+		w, h := provider.ImageDimensions(data)
+		if w > 0 && h > 0 {
+			resp["width"] = w
+			resp["height"] = h
+		}
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *FileHandler) Download(c *gin.Context) {

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Button, Input, Modal, Slider } from "antd";
 import { Brush, Eraser, RotateCcw, WandSparkles, X } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
 
 import { readImageMeta } from "@/lib/image-utils";
 
@@ -99,83 +102,90 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
     };
 
     return (
-        <Modal title={null} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={980} centered destroyOnHidden>
-            <div className="grid gap-5 lg:grid-cols-[minmax(360px,1fr)_320px]">
-                <div className="flex min-h-[360px] items-center justify-center rounded-xl border border-black/10 bg-transparent p-0 dark:border-white/10">
-                    <div className="relative inline-block max-w-full overflow-hidden rounded-lg bg-transparent select-none">
-                        <img src={dataUrl} alt="" className="block max-h-[68vh] max-w-full bg-transparent" draggable={false} />
-                        {image ? (
-                            <>
-                                <canvas ref={maskCanvasRef} width={image.width} height={image.height} className="hidden" />
-                                <canvas
-                                    ref={previewCanvasRef}
-                                    width={image.width}
-                                    height={image.height}
-                                    className="absolute inset-0 h-full w-full cursor-crosshair touch-none"
-                                    onPointerDown={startDraw}
-                                    onPointerMove={moveDraw}
-                                    onPointerUp={stopDraw}
-                                    onPointerCancel={stopDraw}
-                                />
-                            </>
-                        ) : null}
-                    </div>
-                </div>
-
-                <div className="flex min-h-[360px] flex-col gap-5">
-                    <div>
-                        <h2 className="text-xl font-semibold">局部遮罩编辑</h2>
-                        <div className="mt-2 text-sm opacity-60">{image ? `${image.width} x ${image.height}px` : "读取中"}</div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                        <Button type={mode === "paint" ? "primary" : "default"} icon={<Brush className="size-4" />} onClick={() => setMode("paint")}>
-                            画笔
-                        </Button>
-                        <Button type={mode === "erase" ? "primary" : "default"} icon={<Eraser className="size-4" />} onClick={() => setMode("erase")}>
-                            擦除
-                        </Button>
-                    </div>
-
-                    <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium opacity-75">笔刷大小</span>
-                            <span className="font-semibold">{brushSize}px</span>
-                        </div>
-                        <Slider min={8} max={160} step={2} value={brushSize} onChange={setBrushSize} />
-                    </div>
-
-                    <div className="space-y-2">
-                        <div className="text-sm font-medium opacity-75">修改要求</div>
-                        <Input.TextArea
-                            rows={6}
-                            value={prompt}
-                            status={error && !prompt.trim() ? "error" : undefined}
-                            placeholder="例如：把选中区域改成金属材质，保持原图光影"
-                            onChange={(event) => {
-                                setPrompt(event.target.value);
-                                setError("");
-                            }}
-                        />
-                        {error ? <div className="text-xs font-medium text-[#ef4444]">{error}</div> : null}
-                    </div>
-
-                    <div className="mt-auto flex items-center justify-between gap-2">
-                        <Button icon={<RotateCcw className="size-4" />} onClick={resetMask}>
-                            重置
-                        </Button>
-                        <div className="flex items-center gap-2">
-                            <Button icon={<X className="size-4" />} onClick={onClose}>
-                                取消
-                            </Button>
-                            <Button type="primary" icon={<WandSparkles className="size-4" />} onClick={submit}>
-                                AI 修改
-                            </Button>
+        <Dialog open={open && Boolean(dataUrl)} onOpenChange={(v) => { if (!v) onClose(); }}>
+            <DialogContent className="max-w-[980px]">
+                <div className="grid gap-5 lg:grid-cols-[minmax(360px,1fr)_320px]">
+                    <div className="flex min-h-[360px] items-center justify-center rounded-xl border border-black/10 bg-transparent p-0 dark:border-white/10">
+                        <div className="relative inline-block max-w-full overflow-hidden rounded-lg bg-transparent select-none">
+                            <img src={dataUrl} alt="" className="block max-h-[68vh] max-w-full bg-transparent" draggable={false} />
+                            {image ? (
+                                <>
+                                    <canvas ref={maskCanvasRef} width={image.width} height={image.height} className="hidden" />
+                                    <canvas
+                                        ref={previewCanvasRef}
+                                        width={image.width}
+                                        height={image.height}
+                                        className="absolute inset-0 h-full w-full cursor-crosshair touch-none"
+                                        onPointerDown={startDraw}
+                                        onPointerMove={moveDraw}
+                                        onPointerUp={stopDraw}
+                                        onPointerCancel={stopDraw}
+                                    />
+                                </>
+                            ) : null}
                         </div>
                     </div>
+
+                    <div className="flex min-h-[360px] flex-col gap-5">
+                        <div>
+                            <h2 className="text-xl font-semibold">蒙版修图</h2>
+                            <div className="mt-2 text-sm opacity-60">{image ? `${image.width} x ${image.height}px` : "读取中"}</div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <Button variant={mode === "paint" ? undefined : "outline"} onClick={() => setMode("paint")}>
+                                <Brush className="size-4" />
+                                画笔
+                            </Button>
+                            <Button variant={mode === "erase" ? undefined : "outline"} onClick={() => setMode("erase")}>
+                                <Eraser className="size-4" />
+                                擦除
+                            </Button>
+                        </div>
+
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                                <span className="font-medium opacity-75">笔刷大小</span>
+                                <span className="font-semibold">{brushSize}px</span>
+                            </div>
+                            <Slider min={8} max={160} step={2} value={[brushSize]} onValueChange={([v]) => setBrushSize(v)} />
+                        </div>
+
+                        <div className="space-y-2">
+                            <div className="text-sm font-medium opacity-75">修改要求</div>
+                            <textarea
+                                rows={6}
+                                value={prompt}
+                                className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${error && !prompt.trim() ? "border-red-500" : ""}`}
+                                placeholder="例如：把选中区域改成金属材质，保持原图光影"
+                                onChange={(event) => {
+                                    setPrompt(event.target.value);
+                                    setError("");
+                                }}
+                            />
+                            {error ? <div className="text-xs font-medium text-[#ef4444]">{error}</div> : null}
+                        </div>
+
+                        <div className="mt-auto flex items-center justify-between gap-2">
+                            <Button variant="outline" onClick={resetMask}>
+                                <RotateCcw className="size-4" />
+                                重置
+                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button variant="outline" onClick={onClose}>
+                                    <X className="size-4" />
+                                    取消
+                                </Button>
+                                <Button onClick={submit}>
+                                    <WandSparkles className="size-4" />
+                                    AI 修改
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </Modal>
+            </DialogContent>
+        </Dialog>
     );
 }
 

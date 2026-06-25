@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { App, Button, Input, Segmented, Tooltip } from "antd";
 import copyToClipboard from "copy-to-clipboard";
 import { Copy, FolderOpen, History, KeyRound, Link2, LoaderCircle, PlugZap, Plus, RefreshCw, RotateCcw, Terminal, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { message } from "@/lib/message";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -42,7 +47,6 @@ type AgentConfigResponse = { ok?: boolean; url?: string; token?: string; hasToke
 export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedded, headless, autoConnect, onApplyOps, onUndoOps }: { snapshot: CanvasAgentSnapshot; canUndoOps: boolean; collapsed?: boolean; embedded?: boolean; headless?: boolean; autoConnect?: boolean; onApplyOps: (ops: CanvasAgentOp[]) => unknown; onUndoOps: () => CanvasAgentSnapshot | null }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const user = useUserStore((state) => state.user);
-    const { message, modal } = App.useApp();
     const [searchParams] = useSearchParams();
     const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, messages, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, activity, connectError, pendingTool, setAgentState, addMessage: pushMessage, addEventLog: pushEventLog, clearEventLogs } = useCanvasAgentStore();
     const [resizing, setResizing] = useState(false);
@@ -154,7 +158,7 @@ export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedde
             connectedRef.current = false;
             setAgentState({ connected: false });
         };
-    }, [enabled, endpoint, loadThreads, message, setAgentState, token]);
+    }, [enabled, endpoint, loadThreads, setAgentState, token]);
 
     useEffect(() => {
         if (connected) void loadThreads();
@@ -406,14 +410,10 @@ export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedde
 
     const confirmDeleteThread = (thread: AgentThreadSummary) => {
         const label = thread.name || thread.preview || "未命名对话";
-        modal.confirm({
-            title: "删除对话记录",
-            content: `确定删除「${label.length > 48 ? `${label.slice(0, 48)}...` : label}」吗？`,
-            okText: "删除",
-            okType: "danger",
-            cancelText: "取消",
-            onOk: () => deleteThread(thread.id),
-        });
+        const displayLabel = label.length > 48 ? `${label.slice(0, 48)}...` : label;
+        if (window.confirm(`确定删除「${displayLabel}」吗？`)) {
+            void deleteThread(thread.id);
+        }
     };
 
     const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -493,7 +493,8 @@ export function CanvasLocalAgentPanel({ snapshot, canUndoOps, collapsed, embedde
                 }}
                 right={
                     <>
-                        <Button size="small" type="text" disabled={!canUndoOps} icon={<RotateCcw className="size-3.5" />} onClick={undoLastTool}>
+                        <Button size="sm" variant="ghost" disabled={!canUndoOps} onClick={undoLastTool}>
+                            <RotateCcw className="size-3.5" />
                             撤销
                         </Button>
                     </>
@@ -608,12 +609,18 @@ function AgentLogView({ logs, theme, context, onClear, onCopied, onCopyBlocked }
                     <div className="text-base font-semibold leading-6">运行日志</div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Segmented size="small" value={mode} onChange={(value) => setMode(value as "text" | "json")} options={[{ label: "排查日志", value: "text" }, { label: "原始 JSON", value: "json" }]} />
+                    <Segmented size="sm" value={mode} onChange={(value) => setMode(value as "text" | "json")} options={[{ label: "排查日志", value: "text" }, { label: "原始 JSON", value: "json" }]} />
                     <div className="flex items-center gap-2">
                         <span className="text-xs" style={{ color: theme.node.muted }}>{logs.length} 条</span>
-                        <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void copy()}>复制</Button>
-                        <Button size="small" disabled={!lastError} onClick={() => lastError && void copy(formatLogText([lastError], context), "最近错误已复制")}>最近错误</Button>
-                        <Button size="small" danger type="text" icon={<Trash2 className="size-3.5" />} disabled={!logs.length} onClick={onClear}>清空</Button>
+                        <Button size="sm" variant="outline" onClick={() => void copy()}>
+                            <Copy className="size-3.5" />
+                            复制
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={!lastError} onClick={() => lastError && void copy(formatLogText([lastError], context), "最近错误已复制")}>最近错误</Button>
+                        <Button size="sm" variant="ghost" disabled={!logs.length} className="text-red-500" onClick={onClear}>
+                            <Trash2 className="size-3.5" />
+                            清空
+                        </Button>
                     </div>
                 </div>
                 <textarea
@@ -630,7 +637,6 @@ function AgentLogView({ logs, theme, context, onClear, onCopied, onCopyBlocked }
 }
 
 function AgentConnectView({ theme, url, token, enabled, connected, activity, connectError, onUrlChange, onTokenChange, onToggleEnabled }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; url: string; token: string; enabled: boolean; connected: boolean; activity: string; connectError: string; onUrlChange: (value: string) => void; onTokenChange: (value: string) => void; onToggleEnabled: () => void }) {
-    const { message } = App.useApp();
     const statusText = connectError ? "连接失败" : connected ? activity : enabled ? "连接中" : "未连接";
     const statusColor = connectError ? "#dc2626" : connected ? "#16a34a" : enabled ? "#d97706" : theme.node.muted;
     const copyCommand = (command: string) => {
@@ -656,8 +662,13 @@ function AgentConnectView({ theme, url, token, enabled, connected, activity, con
                                 {command ? (
                                     <div className="mt-2 flex items-center gap-2 rounded-md border bg-transparent px-2 py-1.5" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
                                         <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-[11px] leading-5">{command}</code>
-                                        <Tooltip title="复制命令">
-                                            <Button size="small" type="text" className="!h-6 !w-6 !min-w-6" icon={<Copy className="size-3.5" />} onClick={() => copyCommand(command)} />
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Button size="sm" variant="ghost" className="!h-6 !w-6 !min-w-6 !p-0" onClick={() => copyCommand(command)}>
+                                                    <Copy className="size-3.5" />
+                                                </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>复制命令</TooltipContent>
                                         </Tooltip>
                                     </div>
                                 ) : null}
@@ -679,7 +690,8 @@ function AgentConnectView({ theme, url, token, enabled, connected, activity, con
                                 默认自动读取 Local URL 和 Connect token，失败时再手动填写。
                             </div>
                         </div>
-                        <Button className="!h-8 !px-3" type={enabled ? "default" : "primary"} icon={<PlugZap className="size-4" />} onClick={onToggleEnabled}>
+                        <Button className="!h-8 !px-3" variant={enabled ? "outline" : undefined} onClick={onToggleEnabled}>
+                            <PlugZap className="size-4" />
                             {enabled ? "断开" : "连接"}
                         </Button>
                     </div>
@@ -690,7 +702,10 @@ function AgentConnectView({ theme, url, token, enabled, connected, activity, con
                                 本地地址
                                 <span className="font-normal opacity-70">Local URL</span>
                             </span>
-                            <Input size="large" prefix={<Link2 className="mr-1 size-4" style={{ color: theme.node.faint }} />} value={url} onChange={(event) => onUrlChange(event.target.value)} placeholder="例如 http://127.0.0.1:17371" />
+                            <div className="flex items-center gap-2 rounded-md border px-3 py-2" style={{ borderColor: theme.node.stroke }}>
+                                <Link2 className="mr-1 size-4 shrink-0" style={{ color: theme.node.faint }} />
+                                <Input className="border-0 p-0 shadow-none focus-visible:ring-0" value={url} onChange={(event) => onUrlChange(event.target.value)} placeholder="例如 http://127.0.0.1:17371" />
+                            </div>
                         </label>
                         <label className="grid gap-1.5">
                             <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: theme.node.muted }}>
@@ -698,7 +713,10 @@ function AgentConnectView({ theme, url, token, enabled, connected, activity, con
                                 连接 Token
                                 <span className="font-normal opacity-70">Connect token</span>
                             </span>
-                            <Input.Password size="large" prefix={<KeyRound className="mr-1 size-4" style={{ color: theme.node.faint }} />} value={token} onChange={(event) => onTokenChange(event.target.value)} placeholder="自动发现，或手动填入 Connect token" />
+                            <div className="flex items-center gap-2 rounded-md border px-3 py-2" style={{ borderColor: theme.node.stroke }}>
+                                <KeyRound className="mr-1 size-4 shrink-0" style={{ color: theme.node.faint }} />
+                                <Input type="password" className="border-0 p-0 shadow-none focus-visible:ring-0" value={token} onChange={(event) => onTokenChange(event.target.value)} placeholder="自动发现，或手动填入 Connect token" />
+                            </div>
                         </label>
                         {connectError ? (
                             <div className="rounded-md border px-2.5 py-2 text-xs leading-5" style={{ borderColor: "rgba(220,38,38,.35)", color: "#dc2626" }}>
@@ -726,10 +744,12 @@ function AgentHistoryView({ theme, threads, activeThreadId, workspacePath, loadi
                         {threads.length ? `${threads.length} 条历史` : connected ? "暂无历史" : "未连接"}
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button size="small" icon={<RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />} disabled={!connected || loading} onClick={onRefresh}>
+                        <Button size="sm" variant="outline" disabled={!connected || loading} onClick={onRefresh}>
+                            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
                             刷新
                         </Button>
-                        <Button size="small" type="primary" icon={<Plus className="size-3.5" />} disabled={!connected || loading} onClick={onNewThread}>
+                        <Button size="sm" disabled={!connected || loading} onClick={onNewThread}>
+                            <Plus className="size-3.5" />
                             新对话
                         </Button>
                     </div>
@@ -749,11 +769,16 @@ function AgentHistoryView({ theme, threads, activeThreadId, workspacePath, loadi
                                     </div>
                                     <div className="flex shrink-0 items-center gap-1">
                                         <span className="text-[10px] opacity-55">{formatThreadTime(thread.updatedAt || thread.createdAt)}</span>
-                                        <Button size="small" className="!h-6 !px-2" disabled={loading} onClick={() => onResumeThread(thread.id)}>
+                                        <Button size="sm" variant="outline" className="!h-6 !px-2" disabled={loading} onClick={() => onResumeThread(thread.id)}>
                                             进入
                                         </Button>
-                                        <Tooltip title="删除记录">
-                                            <Button size="small" danger type="text" className="!h-6 !w-6 !min-w-6" disabled={loading} icon={<Trash2 className="size-3.5" />} onClick={() => onDeleteThread(thread)} />
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Button size="sm" variant="ghost" className="!h-6 !w-6 !min-w-6 !p-0 text-red-500" disabled={loading} onClick={() => onDeleteThread(thread)}>
+                                                    <Trash2 className="size-3.5" />
+                                                </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>删除记录</TooltipContent>
                                         </Tooltip>
                                     </div>
                                 </div>

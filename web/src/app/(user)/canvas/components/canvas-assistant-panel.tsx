@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import copyToClipboard from "copy-to-clipboard";
 import { Bot, Copy, Cpu, History, PanelRightClose, Plus, Settings2, Trash2, X } from "lucide-react";
-import { Button, Modal, Segmented, Switch, Tooltip } from "antd";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Segmented } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { motion } from "motion/react";
 
 import { modelOptionName, normalizeModelOptionValue, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -489,27 +493,19 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                 right={
                     <>
                         {view === "history" ? (
-                            <Tooltip title="删除全部">
-                                <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<X className="size-4" />} disabled={!historySessions.length} onClick={() => setDeleteChatIds(historySessions.map((session) => session.id))} />
-                            </Tooltip>
+                            <Tooltip><TooltipTrigger asChild><Button variant="ghost" className="h-8 w-8 min-w-8 rounded-full" style={iconButtonStyle} disabled={!historySessions.length} onClick={() => setDeleteChatIds(historySessions.map((session) => session.id))}><X className="size-4" /></Button></TooltipTrigger><TooltipContent>删除全部</TooltipContent></Tooltip>
                         ) : null}
-                        <Tooltip title="新对话">
-                            <Button
-                                type="text"
-                                shape="circle"
-                                className="!h-8 !w-8 !min-w-8"
+                        <Tooltip><TooltipTrigger asChild><Button
+                                variant="ghost"
+                                className="h-8 w-8 min-w-8 rounded-full"
                                 style={iconButtonStyle}
-                                icon={<Plus className="size-4" />}
                                 disabled={!hasMessages}
                                 onClick={() => {
                                     startChatSession();
                                     setView("chat");
                                 }}
-                            />
-                        </Tooltip>
-                        <Tooltip title="配置">
-                            <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<Settings2 className="size-4" />} onClick={() => openConfigDialog(false)} />
-                        </Tooltip>
+                            ><Plus className="size-4" /></Button></TooltipTrigger><TooltipContent>新对话</TooltipContent></Tooltip>
+                        <Tooltip><TooltipTrigger asChild><Button variant="ghost" className="h-8 w-8 min-w-8 rounded-full" style={iconButtonStyle} onClick={() => openConfigDialog(false)}><Settings2 className="size-4" /></Button></TooltipTrigger><TooltipContent>配置</TooltipContent></Tooltip>
                     </>
                 }
             />
@@ -587,17 +583,14 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                 </>
             ) : null}
 
-            <Modal
-                title="删除对话记录？"
-                open={deleteChatIds.length > 0}
-                centered
-                onCancel={() => setDeleteChatIds([])}
-                footer={
-                    <>
-                        <Button onClick={() => setDeleteChatIds([])}>取消</Button>
+            <Dialog open={deleteChatIds.length > 0} onOpenChange={(v) => !v && setDeleteChatIds([])}>
+                <DialogContent className="max-w-[420px]">
+                    <DialogHeader><DialogTitle>删除对话记录？</DialogTitle></DialogHeader>
+                    <p className="text-sm opacity-60">将删除 {deleteChatIds.length} 条对话记录，此操作不可撤销。</p>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeleteChatIds([])}>取消</Button>
                         <Button
-                            danger
-                            type="primary"
+                            variant="destructive"
                             onClick={() => {
                                 deleteChatIds.length === historySessions.length ? clearSessions() : removeSessions(deleteChatIds);
                                 setDeleteChatIds([]);
@@ -605,11 +598,9 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                         >
                             删除
                         </Button>
-                    </>
-                }
-            >
-                <p className="text-sm opacity-60">将删除 {deleteChatIds.length} 条对话记录，此操作不可撤销。</p>
-            </Modal>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 
@@ -644,12 +635,10 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                     <div className="flex shrink-0 items-center gap-2">
                         <AgentModeSwitch value={agentMode} theme={theme} onChange={onAgentModeChange} />
                         <label className="flex items-center gap-1.5 text-xs" style={{ color: theme.node.muted }}>
-                            <Switch size="small" checked={confirmTools} onChange={(confirmTools) => setAgentState({ confirmTools })} />
+                            <Switch className="scale-75" checked={confirmTools} onCheckedChange={(confirmTools) => setAgentState({ confirmTools })} />
                             工具确认
                         </label>
-                        <Tooltip title="收起对话">
-                            <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" style={iconButtonStyle} icon={<PanelRightClose className="size-4" />} onClick={collapse} />
-                        </Tooltip>
+                        <Tooltip><TooltipTrigger asChild><Button variant="ghost" className="h-8 w-8 min-w-8 rounded-full" style={iconButtonStyle} onClick={collapse}><PanelRightClose className="size-4" /></Button></TooltipTrigger><TooltipContent>收起对话</TooltipContent></Tooltip>
                     </div>
                 </header>
                 {agentMode === "local" ? (
@@ -752,12 +741,10 @@ function AssistantHistory({
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
                             <span className="text-[10px] opacity-55">{formatSessionTime(session.updatedAt || session.createdAt)}</span>
-                            <Button size="small" className="!h-6 !px-2" onClick={() => onOpen(session.id)}>
+                            <Button size="sm" className="h-6 px-2" onClick={() => onOpen(session.id)}>
                                 进入
                             </Button>
-                            <Tooltip title="删除记录">
-                                <Button size="small" danger type="text" className="!h-6 !w-6 !min-w-6" icon={<Trash2 className="size-3.5" />} onClick={() => onDelete(session.id)} />
-                            </Tooltip>
+                            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="sm" className="h-6 w-6 min-w-6 text-destructive" onClick={() => onDelete(session.id)}><Trash2 className="size-3.5" /></Button></TooltipTrigger><TooltipContent>删除记录</TooltipContent></Tooltip>
                         </div>
                     </div>
                 </div>
@@ -789,7 +776,8 @@ function OnlineAgentSetupView({ theme, activeModel, onOpenConfig }: { theme: (ty
                                 {activeModel || "未配置模型"}
                             </div>
                         </div>
-                        <Button className="!h-8 !px-3" type="primary" icon={<Settings2 className="size-4" />} onClick={onOpenConfig}>
+                        <Button className="h-8 px-3" onClick={onOpenConfig}>
+                            <Settings2 className="size-4" />
                             配置
                         </Button>
                     </div>
@@ -812,12 +800,12 @@ function OnlineAgentLogView({ logs, theme, context, onClear }: { logs: OnlineAge
     return (
         <div className="flex min-h-full flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <Segmented size="small" value={mode} onChange={(value) => setMode(value as "text" | "json")} options={[{ label: "排查日志", value: "text" }, { label: "原始 JSON", value: "json" }]} />
+                <Segmented size="sm" value={mode} onChange={(value) => setMode(value as "text" | "json")} options={[{ label: "排查日志", value: "text" }, { label: "原始 JSON", value: "json" }]} />
                 <div className="flex items-center gap-2">
                     <span className="text-xs" style={{ color: theme.node.muted }}>{logs.length} 条</span>
-                    <Button size="small" icon={<Copy className="size-3.5" />} disabled={!logs.length} onClick={() => void copy()}>复制</Button>
-                    <Button size="small" disabled={!lastError} onClick={() => lastError && void copy(formatOnlineLogText([lastError], context))}>最近错误</Button>
-                    <Button size="small" danger type="text" icon={<Trash2 className="size-3.5" />} disabled={!logs.length} onClick={onClear}>清空</Button>
+                    <Button size="sm" disabled={!logs.length} onClick={() => void copy()}><Copy className="size-3.5" />复制</Button>
+                    <Button size="sm" disabled={!lastError} onClick={() => lastError && void copy(formatOnlineLogText([lastError], context))}>最近错误</Button>
+                    <Button variant="ghost" size="sm" className="text-destructive" disabled={!logs.length} onClick={onClear}><Trash2 className="size-3.5" />清空</Button>
                 </div>
             </div>
             <textarea

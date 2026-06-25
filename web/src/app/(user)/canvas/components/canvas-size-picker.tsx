@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { Select } from "antd";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 import { cn } from "@/lib/utils";
 
@@ -12,54 +11,29 @@ type CanvasSizePickerProps = {
 };
 
 export function CanvasSizePicker({ value, className, onChange }: CanvasSizePickerProps) {
-    const rootRef = useRef<HTMLDivElement>(null);
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState("");
-    const extraOptions = [value, search.trim()].filter((item) => item && !sizeOptions.includes(item));
-    const options = [...sizeOptions, ...Array.from(new Set(extraOptions))].map((size) => ({ value: size, label: size }));
     const selectSize = (next: string) => {
         onChange(next.trim());
-        setSearch("");
-        setOpen(false);
     };
 
-    useEffect(() => {
-        if (!open) return;
-        const close = (event: PointerEvent) => {
-            const target = event.target instanceof Element ? event.target : null;
-            if (target && (rootRef.current?.contains(target) || target.closest(".ant-select-dropdown"))) return;
-            setOpen(false);
-        };
-        window.addEventListener("pointerdown", close, true);
-        return () => window.removeEventListener("pointerdown", close, true);
-    }, [open]);
-
     return (
-        <div ref={rootRef} className={className}>
-            <Select
-                showSearch
-                open={open}
-                className={cn("canvas-compact-control canvas-control-select h-full w-full")}
-                value={value || undefined}
-                searchValue={search}
-                placeholder="比例"
-                options={options}
-                popupMatchSelectWidth={false}
-                popupRender={(menu) => (
-                    <div onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
-                        {menu}
-                    </div>
-                )}
-                onOpenChange={setOpen}
-                onSearch={setSearch}
-                onChange={selectSize}
-                onBlur={() => {
-                    if (search.trim()) selectSize(search);
-                }}
-                onInputKeyDown={(event) => {
-                    if (event.key === "Enter" && search.trim()) selectSize(search);
-                }}
-            />
+        <div className={className}>
+            <Select value={value || undefined} onValueChange={selectSize}>
+                <SelectTrigger className={cn("canvas-compact-control canvas-control-select h-full w-full")}>
+                    <SelectValue placeholder="比例" />
+                </SelectTrigger>
+                <SelectContent onPointerDown={(event) => event.stopPropagation()}>
+                    {sizeOptions.map((size) => (
+                        <SelectItem key={size} value={size}>
+                            {size}
+                        </SelectItem>
+                    ))}
+                    {value && !sizeOptions.includes(value) ? (
+                        <SelectItem value={value}>
+                            {value}
+                        </SelectItem>
+                    ) : null}
+                </SelectContent>
+            </Select>
         </div>
     );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Button, Tooltip } from "antd";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BookOpen } from "lucide-react";
 
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
@@ -12,15 +13,20 @@ export function CanvasPromptLibrary({ onSelect }: { onSelect: (prompt: string) =
 
     return (
         <>
-            <Tooltip title="提示词库">
-                <Button
-                    type="text"
-                    className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0"
-                    style={{ color: theme.node.text }}
-                    icon={<BookOpen className="size-3.5" />}
-                    onClick={() => setOpen(true)}
-                    aria-label="提示词库"
-                />
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0"
+                        style={{ color: theme.node.text }}
+                        onClick={() => setOpen(true)}
+                        aria-label="提示词库"
+                    >
+                        <BookOpen className="size-3.5" />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>提示词库</TooltipContent>
             </Tooltip>
             <PromptSelectDialog open={open} onOpenChange={setOpen} onSelect={onSelect} />
         </>

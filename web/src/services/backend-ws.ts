@@ -15,6 +15,8 @@ export type TaskResultFile = {
     url: string;
     mimeType: string;
     size: number;
+    width?: number;
+    height?: number;
 };
 
 export type TaskResult = {

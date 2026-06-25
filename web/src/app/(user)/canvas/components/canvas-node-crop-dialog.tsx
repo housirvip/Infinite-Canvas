@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Button, Modal } from "antd";
 import { Check, Lock, LockOpen, X } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import { readImageMeta } from "@/lib/image-utils";
 
@@ -54,50 +56,56 @@ export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { da
     };
 
     return (
-        <Modal title="裁剪图片" open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={780} centered destroyOnHidden>
-            <div className="space-y-4">
-                <div className="flex justify-center">
-                    <div ref={boxRef} className="relative inline-block max-w-full overflow-hidden rounded-lg bg-black select-none">
-                        <img src={dataUrl} alt="" className="block max-h-[62vh] max-w-full opacity-90" draggable={false} />
-                        <CropMask crop={crop} />
-                        <div className="absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.3),0_0_28px_rgba(0,0,0,.28)]" style={cropStyle(crop)} onPointerDown={(event) => startDrag("move", event)}>
-                            <div className="pointer-events-none absolute inset-x-0 top-1/3 border-t border-white/50" />
-                            <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-white/50" />
-                            <div className="pointer-events-none absolute inset-y-0 left-1/3 border-l border-white/50" />
-                            <div className="pointer-events-none absolute inset-y-0 left-2/3 border-l border-white/50" />
-                            {handles.map((handle) => (
-                                <button key={handle} type="button" className="absolute size-3 rounded-full border border-black bg-white" style={handleStyle(handle)} onPointerDown={(event) => startDrag("resize", event, handle)} aria-label="调整裁剪框" />
-                            ))}
+        <Dialog open={open && Boolean(dataUrl)} onOpenChange={(v) => { if (!v) onClose(); }}>
+            <DialogContent className="max-w-[780px]">
+                <DialogHeader><DialogTitle>裁剪图片</DialogTitle></DialogHeader>
+                <div className="space-y-4">
+                    <div className="flex justify-center">
+                        <div ref={boxRef} className="relative inline-block max-w-full overflow-hidden rounded-lg bg-black select-none">
+                            <img src={dataUrl} alt="" className="block max-h-[62vh] max-w-full opacity-90" draggable={false} />
+                            <CropMask crop={crop} />
+                            <div className="absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.3),0_0_28px_rgba(0,0,0,.28)]" style={cropStyle(crop)} onPointerDown={(event) => startDrag("move", event)}>
+                                <div className="pointer-events-none absolute inset-x-0 top-1/3 border-t border-white/50" />
+                                <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-white/50" />
+                                <div className="pointer-events-none absolute inset-y-0 left-1/3 border-l border-white/50" />
+                                <div className="pointer-events-none absolute inset-y-0 left-2/3 border-l border-white/50" />
+                                {handles.map((handle) => (
+                                    <button key={handle} type="button" className="absolute size-3 rounded-full border border-black bg-white" style={handleStyle(handle)} onPointerDown={(event) => startDrag("resize", event, handle)} aria-label="调整裁剪框" />
+                                ))}
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-3 text-sm opacity-80">
-                        <span>裁剪尺寸 {cropSize ? `${cropSize.width} x ${cropSize.height}` : "未知"}</span>
-                        <span>比例 {cropSize ? formatRatio(cropSize.width, cropSize.height) : "未知"}</span>
-                        {image ? (
-                            <span>
-                                原图 {image.width} x {image.height}
-                            </span>
-                        ) : null}
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-3 text-sm opacity-80">
+                            <span>裁剪尺寸 {cropSize ? `${cropSize.width} x ${cropSize.height}` : "未知"}</span>
+                            <span>比例 {cropSize ? formatRatio(cropSize.width, cropSize.height) : "未知"}</span>
+                            {image ? (
+                                <span>
+                                    原图 {image.width} x {image.height}
+                                </span>
+                            ) : null}
+                        </div>
+                        <Button variant="outline" onClick={() => setLocked((value) => !value)}>
+                            {locked ? <Lock className="size-4" /> : <LockOpen className="size-4" />}
+                            {locked ? "锁定比例" : "自由比例"}
+                        </Button>
                     </div>
-                    <Button icon={locked ? <Lock className="size-4" /> : <LockOpen className="size-4" />} onClick={() => setLocked((value) => !value)}>
-                        {locked ? "锁定比例" : "自由比例"}
-                    </Button>
-                </div>
 
-                <div className="flex items-center justify-end gap-2">
-                    <Button onClick={() => setCrop(defaultCrop)}>重置</Button>
-                    <Button icon={<X className="size-4" />} onClick={onClose}>
-                        取消
-                    </Button>
-                    <Button type="primary" icon={<Check className="size-4" />} onClick={() => onConfirm(crop)}>
-                        确认裁剪
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                        <Button variant="outline" onClick={() => setCrop(defaultCrop)}>重置</Button>
+                        <Button variant="outline" onClick={onClose}>
+                            <X className="size-4" />
+                            取消
+                        </Button>
+                        <Button onClick={() => onConfirm(crop)}>
+                            <Check className="size-4" />
+                            确认裁剪
+                        </Button>
+                    </div>
                 </div>
-            </div>
-        </Modal>
+            </DialogContent>
+        </Dialog>
     );
 }
 

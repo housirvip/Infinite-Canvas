@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { App, Modal, Segmented, Tooltip } from "antd";
 import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
+
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Segmented } from "@/components/ui/segmented";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { message } from "@/lib/message";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, getDataUrlByteSize } from "@/lib/image-utils";
@@ -25,6 +29,7 @@ type CanvasNodeHoverToolbarProps = {
     onDownload: (node: CanvasNodeData) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
     onMaskEdit: (node: CanvasNodeData) => void;
+    onDrawEdit: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
     onSplit: (node: CanvasNodeData) => void;
     onUpscale: (node: CanvasNodeData) => void;
@@ -62,6 +67,7 @@ export function CanvasNodeHoverToolbar({
     onDownload,
     onSaveAsset,
     onMaskEdit,
+    onDrawEdit,
     onCrop,
     onSplit,
     onUpscale,
@@ -78,7 +84,6 @@ export function CanvasNodeHoverToolbar({
     const [draftImageToolIds, setDraftImageToolIds] = useState<ImageQuickToolId[]>(defaultImageQuickToolIds);
     const [draftShowImageToolLabels, setDraftShowImageToolLabels] = useState(true);
     const [imageToolSettingsOpen, setImageToolSettingsOpen] = useState(false);
-    const { message } = App.useApp();
     const copyText = useCopyText();
 
     useEffect(() => {
@@ -121,7 +126,7 @@ export function CanvasNodeHoverToolbar({
         }
         copyText(prompt, "提示词已复制");
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onDrawEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
 
     function openImageToolSettings() {
         if (!node) return;
@@ -178,8 +183,8 @@ export function CanvasNodeHoverToolbar({
     return (
         <>
             <div
-                className="absolute z-[70] flex h-12 -translate-x-1/2 -translate-y-full items-center overflow-visible rounded-[18px] border border-black/10 bg-white text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
-                style={{ left, top }}
+                className="absolute z-[70] flex -translate-x-1/2 -translate-y-full flex-wrap items-center justify-center rounded-[14px] border border-black/10 bg-white px-1 py-1 text-[13px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
+                style={{ left, top, maxWidth: "min(580px, calc(100vw - 24px))" }}
                 onMouseEnter={() => onKeep(node.id)}
                 onMouseLeave={() => {
                     if (!imageToolSettingsOpen) onLeave();
@@ -232,68 +237,68 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
         if (open) setView("info");
     }, [node?.id, open]);
 
-    const title = (
-        <div className="flex items-center justify-between gap-4 pr-12">
-            <span>节点信息</span>
-            <Segmented
-                size="small"
-                value={view}
-                onChange={(value) => setView(value as "info" | "json")}
-                options={[
-                    { label: "信息", value: "info" },
-                    { label: "JSON", value: "json" },
-                ]}
-            />
-        </div>
-    );
-
     return (
-        <Modal className="canvas-node-info-modal" title={title} open={open && Boolean(node)} centered footer={null} onCancel={onClose}>
-            {node ? (
-                <div className="h-[56vh] min-h-[360px] text-sm">
-                    {view === "info" ? (
-                        <div className="thin-scrollbar h-full space-y-3 overflow-auto pr-1">
-                            <InfoRow label="ID" value={node.id} />
-                            <InfoRow label="类型" value={node.type === CanvasNodeType.Text ? "文本" : node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : node.type === CanvasNodeType.Audio ? "音频" : "生成配置"} />
-                            <InfoRow label="尺寸" value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
-                            <InfoRow label="位置" value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
-                            <InfoRow label="状态" value={node.metadata?.status || "idle"} />
-                            {batchCount > 1 ? <InfoRow label="图片组" value={`${batchCount} 张`} /> : null}
-                            {node.metadata?.prompt ? <InfoRow label="提示词" value={node.metadata.prompt} /> : null}
-                            {imageBytes ? <InfoRow label="图片大小" value={formatBytes(imageBytes)} /> : null}
-                            {node.metadata?.errorDetails ? (
-                                <div className="rounded-lg border p-3 text-red-400" style={{ borderColor: theme.node.stroke }}>
-                                    {node.metadata.errorDetails}
-                                </div>
-                            ) : null}
+        <Dialog open={open && Boolean(node)} onOpenChange={(v) => { if (!v) onClose(); }}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>
+                        <div className="flex items-center justify-between gap-4 pr-12">
+                            <span>节点信息</span>
+                            <Segmented
+                                size="sm"
+                                value={view}
+                                onChange={(value) => setView(value as "info" | "json")}
+                                options={[
+                                    { label: "信息", value: "info" },
+                                    { label: "JSON", value: "json" },
+                                ]}
+                            />
                         </div>
-                    ) : (
-                        <pre className="thin-scrollbar h-full overflow-auto rounded-lg border p-3 text-xs leading-5" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}>
-                            {json}
-                        </pre>
-                    )}
-                </div>
-            ) : null}
-        </Modal>
+                    </DialogTitle>
+                </DialogHeader>
+                {node ? (
+                    <div className="h-[56vh] min-h-[360px] text-sm">
+                        {view === "info" ? (
+                            <div className="thin-scrollbar h-full space-y-3 overflow-auto pr-1">
+                                <InfoRow label="ID" value={node.id} />
+                                <InfoRow label="类型" value={node.type === CanvasNodeType.Text ? "文本" : node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : node.type === CanvasNodeType.Audio ? "音频" : "生成配置"} />
+                                <InfoRow label="尺寸" value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
+                                <InfoRow label="位置" value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
+                                <InfoRow label="状态" value={node.metadata?.status || "idle"} />
+                                {batchCount > 1 ? <InfoRow label="图片组" value={`${batchCount} 张`} /> : null}
+                                {node.metadata?.prompt ? <InfoRow label="提示词" value={node.metadata.prompt} /> : null}
+                                {imageBytes ? <InfoRow label="图片大小" value={formatBytes(imageBytes)} /> : null}
+                                {node.metadata?.errorDetails ? (
+                                    <div className="rounded-lg border p-3 text-red-400" style={{ borderColor: theme.node.stroke }}>
+                                        {node.metadata.errorDetails}
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : (
+                            <pre className="thin-scrollbar h-full overflow-auto rounded-lg border p-3 text-xs leading-5" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}>
+                                {json}
+                            </pre>
+                        )}
+                    </div>
+                ) : null}
+            </DialogContent>
+        </Dialog>
     );
 }
 
 function ToolbarAction({ title, label, icon, onClick, showLabel, active = false, danger = false }: ToolbarTool & { showLabel: boolean }) {
     const hasText = showLabel && Boolean(label);
     return (
-        <Tooltip
-            title={title}
-            placement="top"
-            mouseEnterDelay={0.2}
-            color="#ffffff"
-            styles={{ root: { boxShadow: "0 8px 24px rgba(15,23,42,.16)" }, container: { color: "#242529", fontSize: 13, fontWeight: 500 } }}
-        >
-            <button type="button" className={`group relative flex h-12 items-center whitespace-nowrap px-1.5 ${danger ? "text-[#ef4444]" : ""}`} onClick={onClick} aria-label={title}>
-                <span className={`flex h-9 items-center ${hasText ? "gap-2 px-2.5" : "justify-center px-2"} rounded-lg transition group-hover:bg-[#f0f0f1] ${active ? "bg-[#eeeeef]" : ""}`}>
-                    {icon}
-                    {hasText ? <span>{label}</span> : null}
-                </span>
-            </button>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <button type="button" className={`group relative flex h-10 shrink-0 items-center whitespace-nowrap px-1 ${danger ? "text-[#ef4444]" : ""}`} onClick={onClick} aria-label={title}>
+                    <span className={`flex h-7 items-center ${hasText ? "gap-1.5 px-2" : "justify-center px-1.5"} rounded-md transition group-hover:bg-[#f0f0f1] ${active ? "bg-[#eeeeef]" : ""}`}>
+                        {icon}
+                        {hasText ? <span>{label}</span> : null}
+                    </span>
+                </button>
+            </TooltipTrigger>
+            <TooltipContent>{title}</TooltipContent>
         </Tooltip>
     );
 }

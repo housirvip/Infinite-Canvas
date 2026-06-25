@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Empty, Input, Modal, Pagination, Tag } from "antd";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Tag } from "@/components/ui/tag";
 import { Search } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 
 export type InsertAssetPayload = { kind: "text"; content: string; title: string } | { kind: "image"; dataUrl: string; title: string; storageKey?: string } | { kind: "video"; url: string; title: string; storageKey?: string; width?: number; height?: number };
@@ -15,9 +16,14 @@ type Props = {
 
 export function AssetPickerModal({ open, onInsert, onClose }: Props) {
     return (
-        <Modal title="选择素材" open={open} onCancel={onClose} footer={null} width={860} destroyOnHidden styles={{ body: { padding: "0 24px 24px", minHeight: 480 } }}>
-            <MyAssetsTab onInsert={onInsert} />
-        </Modal>
+        <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+            <DialogContent className="max-w-[860px]">
+                <DialogHeader><DialogTitle>选择素材</DialogTitle></DialogHeader>
+                <div className="min-h-[480px]">
+                    <MyAssetsTab onInsert={onInsert} />
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -45,7 +51,7 @@ function PickerCard({ title, kind, cover, onClick }: { title: string; kind: stri
             <div className="p-2.5">
                 <div className="flex items-center justify-between gap-2">
                     <span className="line-clamp-1 text-xs font-medium text-stone-800 dark:text-stone-200">{title}</span>
-                    <Tag className="m-0 shrink-0 text-[10px]">{kind === "image" ? "图片" : kind === "video" ? "视频" : "文本"}</Tag>
+                    <Tag className="shrink-0 text-[10px]">{kind === "image" ? "图片" : kind === "video" ? "视频" : "文本"}</Tag>
                 </div>
             </div>
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-stone-950/0 text-sm font-medium text-white opacity-0 transition group-hover:bg-stone-950/55 group-hover:opacity-100">插入</div>
@@ -85,31 +91,31 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-                <Input
-                    className="w-56"
-                    size="small"
-                    prefix={<Search className="size-3.5 text-stone-400" />}
-                    placeholder="搜索素材"
-                    value={keyword}
-                    allowClear
-                    onChange={(e) => {
-                        setPage(1);
-                        setKeyword(e.target.value);
-                    }}
-                />
+                <div className="relative w-56">
+                    <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-stone-400" />
+                    <Input
+                        className="h-8 pl-7 text-sm"
+                        placeholder="搜索素材"
+                        value={keyword}
+                        onChange={(e) => {
+                            setPage(1);
+                            setKeyword(e.target.value);
+                        }}
+                    />
+                </div>
                 <div className="flex gap-1.5">
                     {kindOptions.map((opt) => (
-                        <Tag.CheckableTag
+                        <Tag
                             key={opt.value}
+                            checkable
                             checked={kindFilter === opt.value}
-                            className={cn("prompt-filter-tag", kindFilter === opt.value && "is-active")}
-                            onChange={() => {
+                            onCheck={() => {
                                 setPage(1);
                                 setKindFilter(opt.value);
                             }}
                         >
                             {opt.label}
-                        </Tag.CheckableTag>
+                        </Tag>
                     ))}
                 </div>
             </div>
@@ -121,12 +127,28 @@ function MyAssetsTab({ onInsert }: { onInsert: (payload: InsertAssetPayload) => 
                     ))}
                 </div>
             ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有素材" className="py-12" />
+                <div className="flex flex-col items-center justify-center py-12 text-sm text-muted-foreground">没有素材</div>
             )}
 
             {filtered.length > PAGE_SIZE && (
-                <div className="flex justify-center">
-                    <Pagination size="small" current={page} pageSize={PAGE_SIZE} total={filtered.length} onChange={setPage} showSizeChanger={false} />
+                <div className="flex items-center justify-center gap-2">
+                    <button
+                        type="button"
+                        className="rounded border px-2 py-1 text-xs disabled:opacity-50"
+                        disabled={page <= 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                        上一页
+                    </button>
+                    <span className="text-xs text-muted-foreground">{page} / {Math.ceil(filtered.length / PAGE_SIZE)}</span>
+                    <button
+                        type="button"
+                        className="rounded border px-2 py-1 text-xs disabled:opacity-50"
+                        disabled={page >= Math.ceil(filtered.length / PAGE_SIZE)}
+                        onClick={() => setPage((p) => p + 1)}
+                    >
+                        下一页
+                    </button>
                 </div>
             )}
         </div>

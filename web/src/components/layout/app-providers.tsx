@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { App, ConfigProvider } from "antd";
-import zhCN from "antd/locale/zh_CN";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 
 import { ClientRootInit } from "@/components/layout/client-root-init";
-import { getAntThemeConfig } from "@/lib/app-theme";
 import { backendWs } from "@/services/backend-ws";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useAssetStore } from "@/stores/use-asset-store";
@@ -58,12 +57,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
     }, [assetsHydrated, authReady, fetchAssets, userId]);
 
     return (
-        <ConfigProvider locale={zhCN} theme={getAntThemeConfig(dark)}>
-            <App>
-                <QueryClientProvider client={queryClient}>
-                    <ClientRootInit>{children}</ClientRootInit>
-                </QueryClientProvider>
-            </App>
-        </ConfigProvider>
+        <TooltipProvider>
+            <QueryClientProvider client={queryClient}>
+                <ClientRootInit>{children}</ClientRootInit>
+            </QueryClientProvider>
+            <Toaster position="top-center" richColors />
+        </TooltipProvider>
     );
 }

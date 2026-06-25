@@ -1,8 +1,9 @@
 import { Suspense, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { App, Button } from "antd";
 import { Download, FileUp, Plus } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { message } from "@/lib/message";
 import { readZip } from "@/lib/zip";
 import { setMediaBlob } from "@/services/file-storage";
 import { setImageBlob } from "@/services/image-storage";
@@ -22,7 +23,6 @@ export default function CanvasPage() {
 }
 
 function CanvasPageInner() {
-    const { message } = App.useApp();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const inputRef = useRef<HTMLInputElement>(null);
@@ -102,24 +102,24 @@ function CanvasPageInner() {
                     <div className="flex items-center gap-2">
                         {selectedIds.length ? (
                             <>
-                                <Button disabled={!hydrated} icon={<Download className="size-4" />} onClick={() => void exportCanvasProjects(projects.filter((project) => selectedIds.includes(project.id)), `无限画布-${selectedIds.length}个项目`)}>
-                                    导出选中
+                                <Button variant="outline" disabled={!hydrated} onClick={() => void exportCanvasProjects(projects.filter((project) => selectedIds.includes(project.id)), `无限画布-${selectedIds.length}个项目`)}>
+                                    <Download className="size-4" /> 导出选中
                                 </Button>
-                                <Button disabled={!hydrated} onClick={() => setDeleteIds(selectedIds)}>
+                                <Button variant="outline" disabled={!hydrated} onClick={() => setDeleteIds(selectedIds)}>
                                     删除选中
                                 </Button>
                             </>
                         ) : null}
                         {projects.length ? (
-                            <Button disabled={!hydrated} onClick={() => setDeleteIds(projects.map((project) => project.id))}>
+                            <Button variant="outline" disabled={!hydrated} onClick={() => setDeleteIds(projects.map((project) => project.id))}>
                                 删除全部
                             </Button>
                         ) : null}
-                        <Button disabled={!hydrated} icon={<FileUp className="size-4" />} onClick={() => inputRef.current?.click()}>
-                            导入画布
+                        <Button variant="outline" disabled={!hydrated} onClick={() => inputRef.current?.click()}>
+                            <FileUp className="size-4" /> 导入画布
                         </Button>
-                        <Button disabled={!hydrated} type="primary" icon={<Plus className="size-4" />} onClick={() => void createAndEnter()}>
-                            新建画布
+                        <Button disabled={!hydrated} onClick={() => void createAndEnter()}>
+                            <Plus className="size-4" /> 新建画布
                         </Button>
                     </div>
                 </header>
@@ -136,8 +136,8 @@ function CanvasPageInner() {
                     <section className="flex min-h-[360px] flex-col items-center justify-center border-y border-stone-200 text-center dark:border-stone-800">
                         <h2 className="text-xl font-medium">还没有画布</h2>
                         <p className="mt-3 text-sm text-stone-500">新建一个画布后，就可以独立保存节点、连线和画布外观。</p>
-                        <Button type="primary" className="mt-6" icon={<Plus className="size-4" />} onClick={() => void createAndEnter()}>
-                            新建画布
+                        <Button className="mt-6" onClick={() => void createAndEnter()}>
+                            <Plus className="size-4" /> 新建画布
                         </Button>
                     </section>
                 )}

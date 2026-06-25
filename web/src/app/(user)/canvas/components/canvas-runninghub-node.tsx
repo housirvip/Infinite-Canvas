@@ -1,21 +1,23 @@
-import { LoaderCircle, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock } from "lucide-react";
 
+import { TaskProgress } from "@/components/task-progress";
 import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { CanvasNodeType, type CanvasNodeData } from "../types";
+import type { CanvasNodeData } from "../types";
 
 export function RunningHubNodeContent({ node, theme }: { node: CanvasNodeData; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
     const workflows = useRunningHubStore((state) => state.workflows);
     const workflow = workflows.find((w) => w.id === node.metadata?.runninghubWorkflowId);
     const status = node.metadata?.status || "idle";
-    const statusText = node.metadata?.runninghubStatus || "";
+    const progressText = typeof node.metadata?.progressText === "string" ? node.metadata.progressText : (node.metadata?.runninghubStatus || "");
+    const progress = typeof node.metadata?.progress === "number" ? node.metadata.progress : undefined;
 
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-4" style={{ color: theme.node.text }}>
             {/* Header */}
             <div className="flex items-center gap-2">
                 <div className="flex size-8 items-center justify-center rounded-lg" style={{ background: "#6366f1", color: "#fff" }}>
-                    <span className="text-sm font-semibold leading-none" aria-hidden="true">R</span>
+                    <span className="text-xs font-semibold leading-none" aria-hidden="true">RH</span>
                 </div>
                 <span className="text-sm font-semibold">RunningHub</span>
             </div>
@@ -27,10 +29,11 @@ export function RunningHubNodeContent({ node, theme }: { node: CanvasNodeData; t
 
             {/* Status */}
             {status === "loading" ? (
-                <div className="flex items-center gap-2 text-xs">
-                    <LoaderCircle className="size-4 animate-spin text-blue-500" />
-                    <span>{statusText || "执行中..."}</span>
-                </div>
+                <TaskProgress
+                    progress={progress}
+                    progressText={progressText || "执行中..."}
+                    compact
+                />
             ) : status === "error" ? (
                 <div className="flex max-w-full items-start gap-2 text-xs text-red-500">
                     <AlertCircle className="mt-0.5 size-3.5 shrink-0" />

@@ -1,14 +1,18 @@
-import { App, Button, Form, Input, Modal, Select, Space } from "antd";
 import { ArrowDown, ArrowUp, ClipboardPaste, Download, Plus, Settings2, Trash2, Upload as UploadIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { message } from "@/lib/message";
 import { createRunningHubWorkflow, parseCurlCommand, suggestParamLabel, suggestParamRole, PARAM_ROLE_OPTIONS, type ParsedCurlNode, type RunningHubParam, type RunningHubParamRole, type RunningHubWorkflow } from "@/lib/runninghub";
 import { useRunningHubStore } from "@/stores/use-runninghub-store";
 
 type PendingImportRow = ParsedCurlNode & { role: RunningHubParamRole; label: string };
 
 export function RunningHubConfigModal() {
-    const { message } = App.useApp();
     const [editingWorkflow, setEditingWorkflow] = useState<RunningHubWorkflow | null>(null);
     const [apiKeyDraft, setApiKeyDraft] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,103 +107,111 @@ export function RunningHubConfigModal() {
 
     return (
         <>
-            <Modal
-                title="RunningHub 工作流"
-                width={860}
-                open={isOpen}
-                onCancel={() => setOpen(false)}
-                footer={[
-                    <Button key="done" type="primary" onClick={() => setOpen(false)}>
-                        完成
-                    </Button>,
-                ]}
-            >
-                <Form layout="vertical" requiredMark={false}>
-                    <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                            <div>
-                                <div className="text-sm font-semibold">RunningHub 配置</div>
-                                <div className="mt-1 text-xs text-stone-500">独立管理 RunningHub API Key 和 ComfyUI 工作流，画布 RunningHub 节点会读取这里的配置。</div>
+            <Dialog open={isOpen} onOpenChange={(v) => !v && setOpen(false)}>
+                <DialogContent className="max-w-[860px]">
+                    <DialogHeader>
+                        <DialogTitle>RunningHub 工作流</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-sm font-semibold">RunningHub 配置</div>
+                                    <div className="mt-1 text-xs text-stone-500">独立管理 RunningHub API Key 和 ComfyUI 工作流，画布 RunningHub 节点会读取这里的配置。</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Button variant="outline" size="sm" onClick={handleExport} disabled={!workflows.length}>
+                                        <Download className="size-3.5" />
+                                        导出
+                                    </Button>
+                                    <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                                        <UploadIcon className="size-3.5" />
+                                        导入
+                                    </Button>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept=".json"
+                                        className="hidden"
+                                        onChange={(event) => {
+                                            const file = event.target.files?.[0];
+                                            if (file) handleImport(file);
+                                            event.target.value = "";
+                                        }}
+                                    />
+                                </div>
                             </div>
-                            <Space size="small">
-                                <Button size="small" icon={<Download className="size-3.5" />} onClick={handleExport} disabled={!workflows.length}>
-                                    导出
-                                </Button>
-                                <Button size="small" icon={<UploadIcon className="size-3.5" />} onClick={() => fileInputRef.current?.click()}>
-                                    导入
-                                </Button>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".json"
-                                    className="hidden"
-                                    onChange={(event) => {
-                                        const file = event.target.files?.[0];
-                                        if (file) handleImport(file);
-                                        event.target.value = "";
-                                    }}
-                                />
-                            </Space>
-                        </div>
-                        <Form.Item label="API Key" className="mb-0">
-                            <div className="flex gap-2">
-                                <Input.Password
-                                    value={apiKeyDraft}
-                                    placeholder={hasApiKey ? "已保存（输入新值覆盖，留空不修改）" : "输入 RunningHub API Key"}
-                                    onChange={(event) => setApiKeyDraft(event.target.value)}
-                                    onPressEnter={() => void handleSaveApiKey()}
-                                />
-                                <Button type="primary" onClick={() => void handleSaveApiKey()}>
-                                    保存 Key
-                                </Button>
-                            </div>
-                        </Form.Item>
-                    </section>
-
-                    <section className="mt-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                        <div className="mb-3 flex items-center justify-between">
-                            <div>
-                                <div className="text-sm font-semibold">工作流列表</div>
-                                <div className="mt-1 text-xs text-stone-500">每个工作流对应 RunningHub 上的一个 ComfyUI 工作流，需配置节点参数映射。</div>
-                            </div>
-                            <Button type="primary" size="small" icon={<Plus className="size-3.5" />} onClick={addWorkflow}>
-                                新增
-                            </Button>
-                        </div>
-
-                        {workflows.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-stone-300 py-8 text-center text-xs text-stone-400 dark:border-stone-700">暂无工作流，点击"新增"添加</div>
-                        ) : (
                             <div className="space-y-2">
-                                {workflows.map((workflow) => {
-                                    const promptCount = workflow.params.filter((param) => param.role === "prompt").length;
-                                    const imageCount = workflow.params.filter((param) => param.role === "image").length;
-                                    const videoCount = workflow.params.filter((param) => param.role === "video").length;
-                                    const boolCount = workflow.params.filter((param) => param.role === "boolean").length;
-                                    const numCount = workflow.params.filter((param) => param.role === "number").length;
-                                    const strCount = workflow.params.filter((param) => param.role === "string").length;
-                                    return (
-                                        <div key={workflow.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-800">
-                                            <div className="min-w-0">
-                                                <div className="truncate text-sm font-medium">{workflow.name}</div>
-                                                <div className="mt-0.5 text-xs text-stone-500">
-                                                    ID: {workflow.workflowId || "未配置"} · {promptCount} 提示词 · {imageCount} 图片 · {videoCount} 视频 · {boolCount} 开关 · {numCount} 数字 · {strCount} 字符串 · {workflow.instanceType}
+                                <Label>API Key</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        type="password"
+                                        value={apiKeyDraft}
+                                        placeholder={hasApiKey ? "已保存（输入新值覆盖，留空不修改）" : "输入 RunningHub API Key"}
+                                        onChange={(event) => setApiKeyDraft(event.target.value)}
+                                        onKeyDown={(event) => { if (event.key === "Enter") void handleSaveApiKey(); }}
+                                    />
+                                    <Button onClick={() => void handleSaveApiKey()}>
+                                        保存 Key
+                                    </Button>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                            <div className="mb-3 flex items-center justify-between">
+                                <div>
+                                    <div className="text-sm font-semibold">工作流列表</div>
+                                    <div className="mt-1 text-xs text-stone-500">每个工作流对应 RunningHub 上的一个 ComfyUI 工作流，需配置节点参数映射。</div>
+                                </div>
+                                <Button size="sm" onClick={addWorkflow}>
+                                    <Plus className="size-3.5" />
+                                    新增
+                                </Button>
+                            </div>
+
+                            {workflows.length === 0 ? (
+                                <div className="rounded-lg border border-dashed border-stone-300 py-8 text-center text-xs text-stone-400 dark:border-stone-700">暂无工作流，点击"新增"添加</div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {workflows.map((workflow) => {
+                                        const promptCount = workflow.params.filter((param) => param.role === "prompt").length;
+                                        const imageCount = workflow.params.filter((param) => param.role === "image").length;
+                                        const videoCount = workflow.params.filter((param) => param.role === "video").length;
+                                        const boolCount = workflow.params.filter((param) => param.role === "boolean").length;
+                                        const numCount = workflow.params.filter((param) => param.role === "number").length;
+                                        const strCount = workflow.params.filter((param) => param.role === "string").length;
+                                        return (
+                                            <div key={workflow.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-800">
+                                                <div className="min-w-0">
+                                                    <div className="truncate text-sm font-medium">{workflow.name}</div>
+                                                    <div className="mt-0.5 text-xs text-stone-500">
+                                                        ID: {workflow.workflowId || "未配置"} · {promptCount} 提示词 · {imageCount} 图片 · {videoCount} 视频 · {boolCount} 开关 · {numCount} 数字 · {strCount} 字符串 · {workflow.instanceType}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Button variant="outline" size="sm" onClick={() => setEditingWorkflow({ ...workflow, params: workflow.params.map((param) => ({ ...param })) })}>
+                                                        <Settings2 className="size-3.5" />
+                                                        编辑
+                                                    </Button>
+                                                    <Button variant="destructive" size="sm" onClick={() => void deleteWorkflow(workflow.id)}>
+                                                        <Trash2 className="size-3.5" />
+                                                    </Button>
                                                 </div>
                                             </div>
-                                            <Space size="small">
-                                                <Button size="small" icon={<Settings2 className="size-3.5" />} onClick={() => setEditingWorkflow({ ...workflow, params: workflow.params.map((param) => ({ ...param })) })}>
-                                                    编辑
-                                                </Button>
-                                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => void deleteWorkflow(workflow.id)} />
-                                            </Space>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </section>
-                </Form>
-            </Modal>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </section>
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => setOpen(false)}>
+                            完成
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {editingWorkflow ? <WorkflowEditorModal workflow={editingWorkflow} onSave={(workflow) => void saveWorkflow(workflow)} onCancel={() => setEditingWorkflow(null)} /> : null}
         </>
@@ -207,7 +219,6 @@ export function RunningHubConfigModal() {
 }
 
 function WorkflowEditorModal({ workflow, onSave, onCancel }: { workflow: RunningHubWorkflow; onSave: (workflow: RunningHubWorkflow) => void; onCancel: () => void }) {
-    const { message } = App.useApp();
     const [draft, setDraft] = useState<RunningHubWorkflow>({ ...workflow, params: workflow.params.map((param) => ({ ...param })) });
     const [curlText, setCurlText] = useState("");
     const [showCurlImport, setShowCurlImport] = useState(!workflow.workflowId);
@@ -300,100 +311,158 @@ function WorkflowEditorModal({ workflow, onSave, onCancel }: { workflow: Running
     };
 
     return (
-        <Modal title="编辑工作流" open width={720} centered onCancel={onCancel} onOk={() => onSave(draft)} okText="保存" cancelText="取消" styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}>
-            <Form layout="vertical" requiredMark={false} className="mt-4">
-                <div className="mb-4 rounded-lg border border-dashed border-blue-300 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-950/20">
-                    <div className="mb-2 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-                            <ClipboardPaste className="size-3.5" />
-                            从 RunningHub 粘贴 curl 命令导入
+        <Dialog open onOpenChange={(v) => !v && onCancel()}>
+            <DialogContent className="max-w-[720px]" style={{ maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+                <DialogHeader>
+                    <DialogTitle>编辑工作流</DialogTitle>
+                </DialogHeader>
+                <div className="flex-1 overflow-y-auto" style={{ maxHeight: "70vh" }}>
+                    <div className="mt-4 space-y-4">
+                        <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50/50 p-3 dark:border-blue-800 dark:bg-blue-950/20">
+                            <div className="mb-2 flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+                                    <ClipboardPaste className="size-3.5" />
+                                    从 RunningHub 粘贴 curl 命令导入
+                                </div>
+                                <button type="button" className="text-xs text-blue-600 hover:underline dark:text-blue-400" onClick={() => { setShowCurlImport(!showCurlImport); setPendingImport(null); }}>
+                                    {showCurlImport ? "收起" : "展开"}
+                                </button>
+                            </div>
+                            {showCurlImport && !pendingImport ? (
+                                <>
+                                    <textarea
+                                        rows={4}
+                                        className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                        value={curlText}
+                                        onChange={(event) => setCurlText(event.target.value)}
+                                        placeholder="粘贴从 RunningHub「调用 API」页面复制的 curl 命令..."
+                                    />
+                                    <Button size="sm" className="mt-2" disabled={!curlText.trim()} onClick={handleParseCurl}>
+                                        <ClipboardPaste className="size-3.5" />
+                                        解析
+                                    </Button>
+                                </>
+                            ) : null}
+                            {pendingImport ? (
+                                <div className="mt-2">
+                                    <div className="mb-2 text-xs font-medium">解析到 {pendingImport.length} 个节点，请为每个节点指定角色：</div>
+                                    <div className="space-y-1.5">
+                                        {pendingImport.map((row, index) => (
+                                            <div key={index} className="flex items-center gap-1.5 rounded border border-stone-200 px-2 py-1 text-xs dark:border-stone-700">
+                                                <span className="w-12 shrink-0 text-stone-400" title={`nodeId: ${row.nodeId}`}>{row.nodeId}</span>
+                                                <span className="w-16 shrink-0 truncate font-mono" title={row.fieldName}>{row.fieldName}</span>
+                                                <span className="min-w-0 flex-1 truncate text-stone-400" title={row.description}>{row.description || "-"}</span>
+                                                <Select value={row.role} onValueChange={(value) => updateImportRow(index, { role: value as RunningHubParamRole })}>
+                                                    <SelectTrigger className="h-7 w-24 shrink-0 text-xs"><SelectValue /></SelectTrigger>
+                                                    <SelectContent>
+                                                        {PARAM_ROLE_OPTIONS.map((opt) => (
+                                                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <Input className="h-7 w-24 shrink-0 text-xs" value={row.label} placeholder="标签" onChange={(event) => updateImportRow(index, { label: event.target.value })} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="mt-2 flex gap-2">
+                                        <Button size="sm" onClick={handleConfirmImport}>确认导入</Button>
+                                        <Button variant="outline" size="sm" onClick={() => setPendingImport(null)}>取消</Button>
+                                    </div>
+                                </div>
+                            ) : null}
                         </div>
-                        <Button type="link" size="small" className="!px-0 !text-xs" onClick={() => { setShowCurlImport(!showCurlImport); setPendingImport(null); }}>
-                            {showCurlImport ? "收起" : "展开"}
-                        </Button>
-                    </div>
-                    {showCurlImport && !pendingImport ? (
-                        <>
-                            <Input.TextArea rows={4} value={curlText} onChange={(event) => setCurlText(event.target.value)} placeholder="粘贴从 RunningHub「调用 API」页面复制的 curl 命令..." className="!text-xs" />
-                            <Button type="primary" size="small" className="mt-2" icon={<ClipboardPaste className="size-3.5" />} disabled={!curlText.trim()} onClick={handleParseCurl}>
-                                解析
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label>名称</Label>
+                                <Input value={draft.name} placeholder="例如: FLUX文生图" onChange={(event) => update("name", event.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>工作流 ID</Label>
+                                <Input value={draft.workflowId} placeholder="从 RunningHub 复制" onChange={(event) => update("workflowId", event.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>输出类型</Label>
+                                <Select value={draft.outputType} onValueChange={(value) => update("outputType", value as RunningHubWorkflow["outputType"])}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="image">图片</SelectItem>
+                                        <SelectItem value="video">视频</SelectItem>
+                                        <SelectItem value="auto">自动识别</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>实例类型</Label>
+                                <Select value={draft.instanceType} onValueChange={(value) => update("instanceType", value as RunningHubWorkflow["instanceType"])}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="default">default (24G显存)</SelectItem>
+                                        <SelectItem value="plus">plus (48G显存)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <div className="text-sm font-semibold">参数列表</div>
+                            <Button variant="outline" size="sm" onClick={addParam}>
+                                <Plus className="size-3.5" />
+                                添加参数
                             </Button>
-                        </>
-                    ) : null}
-                    {pendingImport ? (
-                        <div className="mt-2">
-                            <div className="mb-2 text-xs font-medium">解析到 {pendingImport.length} 个节点，请为每个节点指定角色：</div>
+                        </div>
+
+                        {draft.params.length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-stone-300 py-6 text-center text-xs text-stone-400 dark:border-stone-700">暂无参数，可通过 curl 导入或手动添加</div>
+                        ) : (
                             <div className="space-y-1.5">
-                                {pendingImport.map((row, index) => (
-                                    <div key={index} className="flex items-center gap-1.5 rounded border border-stone-200 px-2 py-1 text-xs dark:border-stone-700">
-                                        <span className="w-12 shrink-0 text-stone-400" title={`nodeId: ${row.nodeId}`}>{row.nodeId}</span>
-                                        <span className="w-16 shrink-0 truncate font-mono" title={row.fieldName}>{row.fieldName}</span>
-                                        <span className="min-w-0 flex-1 truncate text-stone-400" title={row.description}>{row.description || "-"}</span>
-                                        <Select size="small" className="!w-24 shrink-0" value={row.role} options={PARAM_ROLE_OPTIONS} onChange={(value) => updateImportRow(index, { role: value })} />
-                                        <Input size="small" className="!w-24 shrink-0" value={row.label} placeholder="标签" onChange={(event) => updateImportRow(index, { label: event.target.value })} />
+                                {draft.params.map((param, index) => (
+                                    <div key={index} className="flex items-center gap-1.5 rounded border border-stone-200 px-2 py-1 dark:border-stone-700">
+                                        <Input className="h-7 w-16 text-xs" value={param.nodeId} placeholder="nodeId" onChange={(event) => updateParam(index, { nodeId: event.target.value })} />
+                                        <Input className="h-7 w-20 text-xs" value={param.fieldName} placeholder="field" onChange={(event) => updateParam(index, { fieldName: event.target.value })} />
+                                        <Select value={param.role} onValueChange={(value) => updateParam(index, { role: value as RunningHubParamRole })}>
+                                            <SelectTrigger className="h-7 w-24 text-xs"><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {PARAM_ROLE_OPTIONS.map((opt) => (
+                                                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <Input className="h-7 w-24 text-xs" value={param.label} placeholder="标签" onChange={(event) => updateParam(index, { label: event.target.value })} />
+                                        {param.role === "string" && param.enumOptions?.length ? (
+                                            <Select value={param.defaultValue || ""} onValueChange={(value) => updateParam(index, { defaultValue: value })}>
+                                                <SelectTrigger className="h-7 min-w-0 flex-1 text-xs"><SelectValue placeholder="默认值" /></SelectTrigger>
+                                                <SelectContent>
+                                                    {param.enumOptions.map((option) => (
+                                                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        ) : param.role === "fixed" || param.role === "boolean" || param.role === "number" || param.role === "string" ? (
+                                            <Input className="h-7 min-w-0 flex-1 text-xs" value={param.defaultValue || ""} placeholder="默认值" onChange={(event) => updateParam(index, { defaultValue: event.target.value })} />
+                                        ) : (
+                                            <div className="min-w-0 flex-1" />
+                                        )}
+                                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={index === 0} onClick={() => moveParam(index, -1)}>
+                                            <ArrowUp className="size-3" />
+                                        </Button>
+                                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={index === draft.params.length - 1} onClick={() => moveParam(index, 1)}>
+                                            <ArrowDown className="size-3" />
+                                        </Button>
+                                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => removeParam(index)}>
+                                            <Trash2 className="size-3" />
+                                        </Button>
                                     </div>
                                 ))}
                             </div>
-                            <div className="mt-2 flex gap-2">
-                                <Button type="primary" size="small" onClick={handleConfirmImport}>确认导入</Button>
-                                <Button size="small" onClick={() => setPendingImport(null)}>取消</Button>
-                            </div>
-                        </div>
-                    ) : null}
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                    <Form.Item label="名称" className="mb-3">
-                        <Input value={draft.name} placeholder="例如: FLUX文生图" onChange={(event) => update("name", event.target.value)} />
-                    </Form.Item>
-                    <Form.Item label="工作流 ID" className="mb-3">
-                        <Input value={draft.workflowId} placeholder="从 RunningHub 复制" onChange={(event) => update("workflowId", event.target.value)} />
-                    </Form.Item>
-                    <Form.Item label="输出类型" className="mb-3">
-                        <Select value={draft.outputType} onChange={(value) => update("outputType", value)} options={[{ label: "图片", value: "image" }, { label: "视频", value: "video" }, { label: "自动识别", value: "auto" }]} />
-                    </Form.Item>
-                    <Form.Item label="实例类型" className="mb-3">
-                        <Select value={draft.instanceType} onChange={(value) => update("instanceType", value)} options={[{ label: "default (24G显存)", value: "default" }, { label: "plus (48G显存)", value: "plus" }]} />
-                    </Form.Item>
-                </div>
-
-                <div className="mb-2 flex items-center justify-between">
-                    <div className="text-sm font-semibold">参数列表</div>
-                    <Button size="small" icon={<Plus className="size-3.5" />} onClick={addParam}>添加参数</Button>
-                </div>
-
-                {draft.params.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-stone-300 py-6 text-center text-xs text-stone-400 dark:border-stone-700">暂无参数，可通过 curl 导入或手动添加</div>
-                ) : (
-                    <div className="space-y-1.5">
-                        {draft.params.map((param, index) => (
-                            <div key={index} className="flex items-center gap-1.5 rounded border border-stone-200 px-2 py-1 dark:border-stone-700">
-                                <Input size="small" value={param.nodeId} placeholder="nodeId" className="!w-16" onChange={(event) => updateParam(index, { nodeId: event.target.value })} />
-                                <Input size="small" value={param.fieldName} placeholder="field" className="!w-20" onChange={(event) => updateParam(index, { fieldName: event.target.value })} />
-                                <Select size="small" className="!w-24" value={param.role} options={PARAM_ROLE_OPTIONS} onChange={(value) => updateParam(index, { role: value })} />
-                                <Input size="small" value={param.label} placeholder="标签" className="!w-24" onChange={(event) => updateParam(index, { label: event.target.value })} />
-                                {param.role === "string" && param.enumOptions?.length ? (
-                                    <Select
-                                        size="small"
-                                        className="min-w-0 flex-1"
-                                        value={param.defaultValue}
-                                        placeholder="默认值"
-                                        options={param.enumOptions.map((option) => ({ label: option, value: option }))}
-                                        onChange={(value) => updateParam(index, { defaultValue: value })}
-                                    />
-                                ) : param.role === "fixed" || param.role === "boolean" || param.role === "number" || param.role === "string" ? (
-                                    <Input size="small" value={param.defaultValue} placeholder="默认值" className="min-w-0 flex-1" onChange={(event) => updateParam(index, { defaultValue: event.target.value })} />
-                                ) : (
-                                    <div className="min-w-0 flex-1" />
-                                )}
-                                <Button size="small" type="text" icon={<ArrowUp className="size-3" />} disabled={index === 0} onClick={() => moveParam(index, -1)} />
-                                <Button size="small" type="text" icon={<ArrowDown className="size-3" />} disabled={index === draft.params.length - 1} onClick={() => moveParam(index, 1)} />
-                                <Button size="small" type="text" danger icon={<Trash2 className="size-3" />} onClick={() => removeParam(index)} />
-                            </div>
-                        ))}
+                        )}
                     </div>
-                )}
-            </Form>
-        </Modal>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={onCancel}>取消</Button>
+                    <Button onClick={() => onSave(draft)}>保存</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }

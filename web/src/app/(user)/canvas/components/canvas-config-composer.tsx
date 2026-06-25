@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { Button, Image } from "antd";
+import { Button } from "@/components/ui/button";
 import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -118,7 +118,9 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                     <div className="shrink-0 text-xs font-semibold">组装提示词</div>
                     <div className="truncate text-[11px] opacity-55">@ 引用已连接素材，发送前按当前连接重新编号</div>
                 </div>
-                <Button size="small" type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<X className="size-3.5" />} onClick={onClose} />
+                <Button variant="ghost" size="sm" className="!h-7 !w-7 !min-w-7 !p-0" onClick={onClose}>
+                    <X className="size-3.5" />
+                </Button>
             </div>
             <div className="relative rounded-xl border" style={{ background: theme.node.fill, borderColor: theme.node.stroke }}>
                 {!value.trim() ? <div className="pointer-events-none absolute left-3 top-2 text-sm leading-7" style={{ color: theme.node.placeholder }}>输入提示词，按 @ 引用连接的图片或文本</div> : null}
@@ -173,7 +175,11 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
                 />
                 {mention && candidates.length ? <MentionMenu inputs={candidates} allInputs={inputs} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null}
             </div>
-            {imagePreview ? <Image src={imagePreview} alt="引用图片预览" style={{ display: "none" }} preview={{ visible: true, src: imagePreview, onVisibleChange: (visible) => !visible && setImagePreview(null) }} /> : null}
+            {imagePreview ? (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60" onClick={() => setImagePreview(null)} onPointerDown={(event) => event.stopPropagation()}>
+                    <img src={imagePreview} alt="引用图片预览" className="max-h-[80vh] max-w-[80vw] rounded-lg object-contain" />
+                </div>
+            ) : null}
         </div>
     );
 

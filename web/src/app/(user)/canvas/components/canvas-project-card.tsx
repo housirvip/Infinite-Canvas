@@ -1,6 +1,7 @@
 import { Check, Download, Pencil, Trash2, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Button, Input } from "antd";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import { useCanvasStore, type CanvasProject } from "../stores/use-canvas-store";
 import { useCanvasUiStore } from "../stores/use-canvas-ui-store";
@@ -60,14 +61,24 @@ export function CanvasProjectCard({ project }: { project: CanvasProject }) {
                 <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
                     {editing ? (
                         <>
-                            <Button type="text" size="small" shape="circle" icon={<Check className="size-4" />} onClick={saveTitle} aria-label="保存名称" />
-                            <Button type="text" size="small" shape="circle" icon={<X className="size-4" />} onClick={stopEditing} aria-label="取消重命名" />
+                            <Button variant="ghost" size="icon" className="!h-8 !w-8" onClick={saveTitle} aria-label="保存名称">
+                                <Check className="size-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="!h-8 !w-8" onClick={stopEditing} aria-label="取消重命名">
+                                <X className="size-4" />
+                            </Button>
                         </>
                     ) : (
                         <>
-                            <Button type="text" size="small" shape="circle" icon={<Download className="size-4" />} onClick={() => void exportCanvasProjects([project], project.title || "无限画布")} aria-label="导出" />
-                            <Button type="text" size="small" shape="circle" icon={<Pencil className="size-4" />} onClick={() => startEditing(project.id, project.title)} aria-label="重命名" />
-                            <Button type="text" size="small" shape="circle" icon={<Trash2 className="size-4" />} onClick={() => setDeleteIds([project.id])} aria-label="删除" />
+                            <Button variant="ghost" size="icon" className="!h-8 !w-8" onClick={() => void exportCanvasProjects([project], project.title || "无限画布")} aria-label="导出">
+                                <Download className="size-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="!h-8 !w-8" onClick={() => startEditing(project.id, project.title)} aria-label="重命名">
+                                <Pencil className="size-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="!h-8 !w-8" onClick={() => setDeleteIds([project.id])} aria-label="删除">
+                                <Trash2 className="size-4" />
+                            </Button>
                         </>
                     )}
                 </div>

@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { Image as ImageIcon, LoaderCircle, MessageSquare, Minus, Music2, Play, Plus, Settings2, Square, Video } from "lucide-react";
-import { Button, Segmented } from "antd";
+import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -41,7 +42,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                 <div className="shrink-0 text-sm font-semibold">生成配置</div>
                 <div className="cursor-default" onMouseDown={(event) => event.stopPropagation()}>
                     <Segmented
-                        size="small"
+                        size="sm"
                         className="canvas-config-mode !rounded-md !p-0.5"
                         value={mode}
                         onChange={(value) => onConfigChange(node.id, { generationMode: value as CanvasGenerationMode })}
@@ -112,9 +113,8 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
             </div>
 
             <Button
-                type="primary"
+                variant={isRunning ? "destructive" : "default"}
                 className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
-                danger={isRunning}
                 disabled={!isRunning && !canGenerate}
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={() => (isRunning ? onStop(node.id) : onGenerate(node.id))}

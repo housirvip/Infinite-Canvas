@@ -52,7 +52,7 @@ export async function cancelTask(taskId: string): Promise<void> {
     await client.post(`/tasks/${taskId}/cancel`);
 }
 
-export async function uploadFile(file: Blob, filename?: string): Promise<{ fileId: string; url: string; mimeType: string; size: number }> {
+export async function uploadFile(file: Blob, filename?: string): Promise<{ fileId: string; url: string; mimeType: string; size: number; width?: number; height?: number }> {
     const formData = new FormData();
     formData.append("file", file, filename);
     const res = await client.post("/files/upload", formData);

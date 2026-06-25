@@ -1,9 +1,16 @@
-import { App, Button, Form, Input, Modal, Select, Tabs } from "antd";
 import { CircleAlert, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ModelPicker } from "@/components/model-picker";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
+import { message } from "@/lib/message";
 import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionLabel, modelOptionsFromChannels, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import * as channelApi from "@/services/backend-channel";
 import * as settingsApi from "@/services/backend-settings";
@@ -31,7 +38,6 @@ const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
 ];
 
 export function AppConfigModal() {
-    const { message } = App.useApp();
     const [activeTab, setActiveTab] = useState("channels");
     const [loadingChannelId, setLoadingChannelId] = useState("");
     const [apiKeyDrafts, setApiKeyDrafts] = useState<Record<string, string>>({});
@@ -188,49 +194,43 @@ export function AppConfigModal() {
     };
 
     return (
-        <Modal
-            title={
-                <div>
-                    <div className="text-lg font-semibold">配置与用户偏好</div>
-                    <div className="mt-1 text-xs font-normal text-stone-500">渠道聚合、模型选择和同步偏好</div>
-                </div>
-            }
-            open={isConfigOpen}
-            width={980}
-            centered
-            onCancel={() => setConfigDialogOpen(false)}
-            styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 12 } }}
-            footer={
-                <Button type="primary" onClick={finishConfig}>
-                    完成
-                </Button>
-            }
-        >
-            <Tabs
-                activeKey={activeTab}
-                onChange={setActiveTab}
-                items={[
-                    {
-                        key: "channels",
-                        label: "渠道",
-                        children: (
-                            <Form layout="vertical" requiredMark={false}>
+        <Dialog open={isConfigOpen} onOpenChange={(v) => !v && setConfigDialogOpen(false)}>
+            <DialogContent className="max-w-[980px]" style={{ maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+                <DialogHeader>
+                    <DialogTitle>
+                        <div>
+                            <div className="text-lg font-semibold">配置与用户偏好</div>
+                            <div className="mt-1 text-xs font-normal text-stone-500">渠道聚合、模型选择和同步偏好</div>
+                        </div>
+                    </DialogTitle>
+                </DialogHeader>
+                <div className="flex-1 overflow-y-auto pr-3" style={{ maxHeight: "72vh" }}>
+                    <Tabs value={activeTab} onValueChange={setActiveTab}>
+                        <TabsList>
+                            <TabsTrigger value="channels">渠道</TabsTrigger>
+                            <TabsTrigger value="models">模型</TabsTrigger>
+                            <TabsTrigger value="preferences">生成偏好</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="channels">
+                            <div className="space-y-4">
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                     <div className="min-w-0 flex-1">
                                         <div className="flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100">
                                             <CircleAlert className="size-3.5 shrink-0" />
                                             <span className="font-semibold">重要：</span>
-                                            <span>新增或拉取模型后，需要到“模型”Tab 选择可选项才会显示。</span>
-                                            <Button type="link" size="small" className="h-auto p-0 text-xs font-semibold text-amber-900 dark:text-amber-100" onClick={() => setActiveTab("models")}>
+                                            <span>新增或拉取模型后，需要到"模型"Tab 选择可选项才会显示。</span>
+                                            <button type="button" className="h-auto p-0 text-xs font-semibold text-amber-900 underline dark:text-amber-100" onClick={() => setActiveTab("models")}>
                                                 去模型设置
-                                            </Button>
+                                            </button>
                                         </div>
                                     </div>
                                     <div className="flex shrink-0 gap-2">
-                                        <Button icon={<RefreshCw className="size-4" />} loading={Boolean(loadingChannelId)} onClick={() => void refreshAllModels()}>
+                                        <Button variant="outline" size="sm" disabled={Boolean(loadingChannelId)} onClick={() => void refreshAllModels()}>
+                                            <RefreshCw className={`size-4 ${loadingChannelId ? "animate-spin" : ""}`} />
                                             拉取全部
                                         </Button>
-                                        <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
+                                        <Button size="sm" onClick={addChannel}>
+                                            <Plus className="size-4" />
                                             新增渠道
                                         </Button>
                                     </div>
@@ -246,83 +246,99 @@ export function AppConfigModal() {
                                                     </div>
                                                 </div>
                                                 <div className="flex shrink-0 gap-2">
-                                                    <Button size="small" loading={loadingChannelId === channel.id} onClick={() => void refreshChannelModels(channel)}>
+                                                    <Button variant="outline" size="sm" disabled={loadingChannelId === channel.id} onClick={() => void refreshChannelModels(channel)}>
+                                                        {loadingChannelId === channel.id ? <RefreshCw className="size-3.5 animate-spin" /> : null}
                                                         拉取模型
                                                     </Button>
-                                                    <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
+                                                    <Button variant="destructive" size="sm" onClick={() => deleteChannel(channel.id)}>
+                                                        <Trash2 className="size-3.5" />
+                                                    </Button>
                                                 </div>
                                             </div>
                                             <div className="grid gap-4 md:grid-cols-2">
-                                                <Form.Item label="渠道名称" className="mb-0">
+                                                <div className="space-y-2">
+                                                    <Label>渠道名称</Label>
                                                     <Input value={channel.name} onChange={(event) => updateChannel(channel.id, { name: event.target.value })} />
-                                                </Form.Item>
-                                                <Form.Item label="调用格式" className="mb-0">
-                                                    <Select value={channel.apiFormat} options={apiFormatOptions} onChange={(value: ApiCallFormat) => updateChannelApiFormat(channel, value)} />
-                                                </Form.Item>
-                                                <Form.Item label="Base URL" className="mb-0">
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>调用格式</Label>
+                                                    <Select value={channel.apiFormat} onValueChange={(value: string) => updateChannelApiFormat(channel, value as ApiCallFormat)}>
+                                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                                        <SelectContent>
+                                                            {apiFormatOptions.map((opt) => (
+                                                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>Base URL</Label>
                                                     <Input value={channel.baseUrl} onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })} />
-                                                </Form.Item>
-                                                <Form.Item label="API Key" className="mb-0">
-                                                    <Input.Password
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>API Key</Label>
+                                                    <Input
+                                                        type="password"
                                                         value={apiKeyDrafts[channel.id] || ""}
                                                         placeholder={useConfigStore.getState().getServerChannelId(channel.id) ? "已保存（输入新值覆盖）" : "输入 API Key"}
                                                         onChange={(event) => setApiKeyDrafts((drafts) => ({ ...drafts, [channel.id]: event.target.value }))}
                                                         onBlur={() => commitChannelApiKey(channel)}
-                                                        onPressEnter={() => commitChannelApiKey(channel)}
+                                                        onKeyDown={(event) => { if (event.key === "Enter") commitChannelApiKey(channel); }}
                                                     />
-                                                </Form.Item>
-                                                <Form.Item label="模型列表" className="mb-0 md:col-span-2">
-                                                    <Select mode="tags" showSearch allowClear maxTagCount="responsive" placeholder="输入模型名，或点击拉取模型" value={channel.models} onChange={(models) => updateChannel(channel.id, { models })} />
-                                                </Form.Item>
+                                                </div>
+                                                <div className="space-y-2 md:col-span-2">
+                                                    <Label>模型列表</Label>
+                                                    <MultiSelect
+                                                        options={channel.models}
+                                                        value={channel.models}
+                                                        placeholder="输入模型名，或点击拉取模型"
+                                                        searchPlaceholder="搜索或输入新模型名..."
+                                                        onChange={(models) => updateChannel(channel.id, { models })}
+                                                        allowCustom
+                                                    />
+                                                </div>
                                             </div>
                                         </section>
                                     ))}
                                 </div>
-                            </Form>
-                        ),
-                    },
-                    {
-                        key: "models",
-                        label: "模型",
-                        children: (
-                            <Form layout="vertical" requiredMark={false}>
+                            </div>
+                        </TabsContent>
+                        <TabsContent value="models">
+                            <div className="space-y-4">
                                 <div className="mb-4 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                     <div className="text-sm font-semibold">默认模型和可选项</div>
                                     <div className="mt-1 text-xs leading-5 text-stone-500">可选项决定各处下拉框展示哪些模型；同名模型会以括号里的渠道名区分。</div>
                                 </div>
                                 <div className="grid gap-4 md:grid-cols-2">
                                     {modelGroups.map((group) => (
-                                        <Form.Item key={group.modelsKey} label={group.optionsLabel} className="mb-0">
-                                            <Select
-                                                mode="tags"
-                                                showSearch
-                                                allowClear
-                                                maxTagCount="responsive"
-                                                placeholder={config.models.length ? `请选择或输入${group.optionsLabel}` : "先到渠道里填写或拉取模型"}
+                                        <div key={group.modelsKey} className="space-y-2">
+                                            <Label>{group.optionsLabel}</Label>
+                                            <MultiSelect
+                                                options={config.models}
                                                 value={config[group.modelsKey]}
-                                                options={modelOptions}
+                                                placeholder={config.models.length ? `请选择${group.optionsLabel}` : "先到渠道里填写或拉取模型"}
+                                                searchPlaceholder="搜索模型..."
                                                 onChange={(models) => updateCapabilityModels(group, models)}
+                                                allowCustom
                                             />
-                                        </Form.Item>
+                                        </div>
                                     ))}
                                 </div>
                                 <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                     {modelGroups.map((group) => (
-                                        <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-0">
+                                        <div key={group.modelKey} className="space-y-2">
+                                            <Label>{group.defaultLabel}</Label>
                                             <ModelPicker config={config} value={config[group.modelKey]} onChange={(model) => updateConfigAndSync(group.modelKey, model)} capability={group.capability} fullWidth />
-                                        </Form.Item>
+                                        </div>
                                     ))}
                                 </div>
-                            </Form>
-                        ),
-                    },
-                    {
-                        key: "preferences",
-                        label: "生成偏好",
-                        children: (
-                            <Form layout="vertical" requiredMark={false}>
+                            </div>
+                        </TabsContent>
+                        <TabsContent value="preferences">
+                            <div className="space-y-4">
                                 <div className="grid gap-4 md:grid-cols-4">
-                                    <Form.Item label="AI 自动生成结果数" extra="新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。" className="mb-4">
+                                    <div className="space-y-2">
+                                        <Label>AI 自动生成结果数</Label>
                                         <Input
                                             type="number"
                                             min={1}
@@ -331,14 +347,32 @@ export function AppConfigModal() {
                                             onChange={(event) => updateConfigAndSync("canvasImageCount", event.target.value)}
                                             onBlur={(event) => updateConfigAndSync("canvasImageCount", normalizeImageCount(event.target.value))}
                                         />
-                                    </Form.Item>
-                                    <Form.Item label="默认音频声音" className="mb-4">
-                                        <Select value={config.audioVoice} options={audioVoiceOptions} onChange={(value) => updateConfigAndSync("audioVoice", value)} />
-                                    </Form.Item>
-                                    <Form.Item label="默认音频格式" className="mb-4">
-                                        <Select value={config.audioFormat} options={audioFormatOptions} onChange={(value) => updateConfigAndSync("audioFormat", value)} />
-                                    </Form.Item>
-                                    <Form.Item label="默认音频语速" className="mb-4">
+                                        <p className="text-xs text-muted-foreground">新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>默认音频声音</Label>
+                                        <Select value={config.audioVoice} onValueChange={(value) => updateConfigAndSync("audioVoice", value)}>
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {audioVoiceOptions.map((opt) => (
+                                                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>默认音频格式</Label>
+                                        <Select value={config.audioFormat} onValueChange={(value) => updateConfigAndSync("audioFormat", value)}>
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {audioFormatOptions.map((opt) => (
+                                                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>默认音频语速</Label>
                                         <Input
                                             type="number"
                                             min={0.25}
@@ -348,20 +382,39 @@ export function AppConfigModal() {
                                             onChange={(event) => updateConfigAndSync("audioSpeed", event.target.value)}
                                             onBlur={(event) => updateConfigAndSync("audioSpeed", normalizeAudioSpeedValue(event.target.value))}
                                         />
-                                    </Form.Item>
+                                    </div>
                                 </div>
-                                <Form.Item label="默认音频指令" className="mb-4">
-                                    <Input.TextArea rows={2} value={config.audioInstructions} placeholder="例如：自然、温暖、适合旁白。" onChange={(event) => updateConfigAndSync("audioInstructions", event.target.value)} />
-                                </Form.Item>
-                                <Form.Item label="系统提示词" className="mb-0">
-                                    <Input.TextArea rows={4} value={config.systemPrompt} placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。" onChange={(event) => updateConfigAndSync("systemPrompt", event.target.value)} />
-                                </Form.Item>
-                            </Form>
-                        ),
-                    },
-                ]}
-            />
-        </Modal>
+                                <div className="space-y-2">
+                                    <Label>默认音频指令</Label>
+                                    <textarea
+                                        rows={2}
+                                        className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                        value={config.audioInstructions}
+                                        placeholder="例如：自然、温暖、适合旁白。"
+                                        onChange={(event) => updateConfigAndSync("audioInstructions", event.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>系统提示词</Label>
+                                    <textarea
+                                        rows={4}
+                                        className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                        value={config.systemPrompt}
+                                        placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。"
+                                        onChange={(event) => updateConfigAndSync("systemPrompt", event.target.value)}
+                                    />
+                                </div>
+                            </div>
+                        </TabsContent>
+                    </Tabs>
+                </div>
+                <DialogFooter>
+                    <Button onClick={finishConfig}>
+                        完成
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 

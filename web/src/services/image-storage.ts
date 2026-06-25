@@ -12,12 +12,15 @@ export type UploadedImage = {
 
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
+    const result = await uploadFile(blob, "image.png");
+    const url = fileUrl(result.fileId);
+    if (result.width && result.height) {
+        return { url, storageKey: result.fileId, width: result.width, height: result.height, bytes: result.size, mimeType: result.mimeType || blob.type };
+    }
     const tempUrl = URL.createObjectURL(blob);
     const meta = await readImageMeta(tempUrl);
     URL.revokeObjectURL(tempUrl);
-    const result = await uploadFile(blob, "image.png");
-    const url = fileUrl(result.fileId);
-    return { url, storageKey: result.fileId, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+    return { url, storageKey: result.fileId, width: meta.width, height: meta.height, bytes: result.size, mimeType: result.mimeType || blob.type || meta.mimeType };
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {

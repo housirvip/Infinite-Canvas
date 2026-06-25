@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowUp, LoaderCircle, Square } from "lucide-react";
-import { Button } from "antd";
+import { Button } from "@/components/ui/button";
 
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -104,9 +104,8 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                     )}
                 </div>
                 <Button
-                    type="primary"
+                    variant={isRunning ? "destructive" : "default"}
                     className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3"
-                    danger={isRunning}
                     disabled={!isRunning && !prompt.trim()}
                     onClick={() => (isRunning ? onStop(node.id) : submit())}
                     aria-label={isRunning ? "停止生成" : "生成"}

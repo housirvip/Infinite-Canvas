@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button, Tooltip } from "antd";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { ArrowUp, CheckCircle2, CircleAlert, ImagePlus, LoaderCircle, UserRound, Wrench, X, XCircle } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -84,10 +85,12 @@ export function AgentPendingToolCard({ summary, detail, theme, onReject, onAppro
                 </details>
                 {onReject || onApprove ? (
                     <div className="mt-4 grid grid-cols-2 gap-2">
-                        <Button danger className="!h-9" icon={<XCircle className="size-4" />} onClick={() => onReject?.()}>
+                        <Button variant="destructive" className="!h-9" onClick={() => onReject?.()}>
+                            <XCircle className="size-4" />
                             拒绝执行
                         </Button>
-                        <Button className="!h-9" icon={<CheckCircle2 className="size-4" />} style={{ borderColor: "rgba(22,163,74,.42)", color: "#16a34a", background: "transparent" }} onClick={() => onApprove?.()}>
+                        <Button variant="outline" className="!h-9" style={{ borderColor: "rgba(22,163,74,.42)", color: "#16a34a", background: "transparent" }} onClick={() => onApprove?.()}>
+                            <CheckCircle2 className="size-4" />
                             批准执行
                         </Button>
                     </div>
@@ -214,14 +217,21 @@ export function AgentChatComposer({
                                     void onAddFiles(event.target.files);
                                     event.target.value = "";
                                 }} />
-                                <Tooltip title="上传图片">
-                                    <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={sending} style={{ color: theme.node.muted }} icon={<ImagePlus className="size-4" />} onClick={() => fileInputRef.current?.click()} />
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="!h-9 !w-9 !min-w-9" disabled={sending} style={{ color: theme.node.muted }} onClick={() => fileInputRef.current?.click()}>
+                                            <ImagePlus className="size-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>上传图片</TooltipContent>
                                 </Tooltip>
                             </>
                         ) : null}
                         {left}
                     </div>
-                    <Button type="primary" shape="circle" className="!h-10 !w-10 !min-w-10" disabled={!canSubmit} icon={sending ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />} onClick={() => void onSubmit()} aria-label="发送" />
+                    <Button size="icon" className="!h-10 !w-10 !min-w-10 !rounded-full" disabled={!canSubmit} onClick={() => void onSubmit()} aria-label="发送">
+                        {sending ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+                    </Button>
                 </div>
             </div>
         </div>

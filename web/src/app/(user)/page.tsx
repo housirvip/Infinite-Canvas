@@ -1,5 +1,6 @@
 import { ArrowRight } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { motion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
 import { Tag } from "@/components/ui/tag";
@@ -16,7 +17,7 @@ function Highlighter({ action, color, children }: { action: "highlight" | "under
             ) : (
                 <span className="absolute inset-x-0 bottom-0 h-1 rounded-full opacity-80" style={{ backgroundColor: color }} />
             )}
-            <span className="relative font-medium text-stone-800 dark:text-stone-200">{children}</span>
+            <span className="relative font-medium text-foreground">{children}</span>
         </span>
     );
 }
@@ -34,26 +35,40 @@ export default function IndexPage() {
     }, []);
 
     return (
-        <main className="relative h-full overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] text-stone-950 dark:bg-[radial-gradient(rgba(245,245,244,.18)_1px,transparent_1px)] dark:text-stone-100">
+        <main className="relative h-full overflow-y-auto bg-background bg-dot-grid text-stone-950 dark:text-stone-100">
             <section className="relative mx-auto min-h-[calc(100vh-4rem)] max-w-7xl overflow-hidden px-6">
-                <div className="pointer-events-none absolute left-[15%] top-24 size-20 rounded-full border border-dashed border-stone-200 dark:border-stone-800" />
-                <div className="pointer-events-none absolute right-[23%] top-[48%] size-20 rounded-full border border-dashed border-stone-200 dark:border-stone-800" />
-
                 <div className="relative flex min-h-[620px] flex-col items-center justify-center pt-10 text-center">
-                    <h1 className="ai-title-aurora max-w-5xl text-balance text-5xl font-semibold tracking-normal sm:text-7xl lg:text-8xl">无限画布</h1>
-                    <p className="mt-8 max-w-3xl text-balance text-lg leading-8 text-stone-500 dark:text-stone-400">
+                    <motion.h1
+                        className="ai-title-aurora max-w-5xl text-balance text-5xl font-semibold leading-tight tracking-normal sm:text-7xl lg:text-8xl"
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, ease: "easeOut" }}
+                    >
+                        无限画布
+                    </motion.h1>
+                    <motion.p
+                        className="mt-8 max-w-3xl text-balance text-lg leading-8 text-stone-500 dark:text-stone-400"
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.15, ease: "easeOut" }}
+                    >
                         在
-                        <Highlighter action="underline" color="#FF9800">
+                        <Highlighter action="underline" color="#78716c">
                             无限画布
                         </Highlighter>
                         中生成、连接和重组
-                        <Highlighter action="highlight" color="#87CEFA">
+                        <Highlighter action="highlight" color="#d6d3d1">
                             图片、文字与图形
                         </Highlighter>
                         ，让创作从单次生成变成连续推演。
-                    </p>
-                    <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-                        <Button size="lg" asChild>
+                    </motion.p>
+                    <motion.div
+                        className="mt-10 flex flex-wrap items-center justify-center gap-3"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: 0.3, ease: "easeOut" }}
+                    >
+                        <Button variant="brand" size="lg" asChild>
                             <a href={`/${primaryTool.slug}`}>
                                 开始使用 <ArrowRight className="size-4" />
                             </a>
@@ -61,7 +76,7 @@ export default function IndexPage() {
                         <Button variant="outline" size="lg" asChild>
                             <a href="/canvas">打开画布</a>
                         </Button>
-                    </div>
+                    </motion.div>
                 </div>
 
                 <section className="relative mx-auto mb-20 max-w-6xl border-t border-stone-200 pt-12 dark:border-stone-800">
@@ -79,15 +94,18 @@ export default function IndexPage() {
                     </div>
                     <div className="grid auto-rows-[210px] gap-4 md:grid-cols-4">
                         {promptShowcase.map((item, index) => (
-                            <button
+                            <motion.button
                                 key={item.id}
                                 type="button"
+                                initial={{ opacity: 0, y: 16 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.35, delay: index * 0.04, ease: "easeOut" }}
                                 onClick={() => {
                                     setPreviewIndex(index);
                                     setPreviewOpen(true);
                                 }}
                                 className={cn(
-                                    "group relative cursor-pointer overflow-hidden border border-stone-200 bg-stone-100 text-left dark:border-stone-800 dark:bg-stone-900",
+                                    "group relative cursor-pointer overflow-hidden rounded-lg border border-stone-200 bg-stone-100 text-left transition-shadow duration-200 hover:shadow-lg hover:ring-2 hover:ring-stone-400/40 dark:border-stone-800 dark:bg-stone-900",
                                     index === 0 && "md:col-span-2 md:row-span-2",
                                     index === 3 && "md:col-span-2",
                                 )}
@@ -104,7 +122,7 @@ export default function IndexPage() {
                                     <h3 className="text-sm font-medium">{item.title}</h3>
                                     <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/75">{item.prompt}</p>
                                 </div>
-                            </button>
+                            </motion.button>
                         ))}
                     </div>
                 </section>

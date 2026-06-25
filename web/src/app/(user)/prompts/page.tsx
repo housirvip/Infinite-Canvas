@@ -1,5 +1,6 @@
 import { FolderPlus, Search } from "lucide-react";
 import { type UIEvent, useEffect, useState } from "react";
+import { motion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
@@ -49,11 +50,11 @@ export default function PromptsPage() {
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-stone-800 dark:text-stone-100">
             <main
-                className="min-h-0 flex-1 overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]"
+                className="min-h-0 flex-1 overflow-y-auto bg-background bg-dot-grid px-6 py-8"
                 onScroll={handleListScroll}
             >
                 <div className="pb-8">
-                    <div className="mx-auto max-w-5xl text-center">
+                    <div className="mx-auto max-w-6xl text-center">
                         <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">提示词中心</h1>
                         <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">共 {totalPrompts} 条提示词，按标题、标签与分类快速查找灵感。</p>
                     </div>
@@ -104,9 +105,14 @@ export default function PromptsPage() {
                 {!query.isLoading ? (
                     <div>
                         <div className="mx-auto grid max-w-7xl gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                            {promptItems.map((item) => (
-                                <PromptCard
+                            {promptItems.map((item, index) => (
+                                <motion.div
                                     key={item.id}
+                                    initial={{ opacity: 0, y: 12 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.3, delay: index * 0.04, ease: "easeOut" }}
+                                >
+                                <PromptCard
                                     item={item}
                                     onOpen={() => setSelectedPrompt(item)}
                                     onCopy={() => copyText(item.prompt, "提示词已复制")}
@@ -117,6 +123,7 @@ export default function PromptsPage() {
                                         </Button>
                                     }
                                 />
+                                </motion.div>
                             ))}
                         </div>
                         {promptItems.length === 0 ? <Empty description="没有找到匹配的提示词" className="py-16" /> : null}

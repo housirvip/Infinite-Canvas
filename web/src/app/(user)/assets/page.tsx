@@ -1,6 +1,7 @@
 import { Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { saveAs } from "file-saver";
+import { motion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -233,9 +234,9 @@ export default function AssetsPage() {
 
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-stone-900 dark:text-stone-100">
-            <main className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.14)_1px,transparent_1px)]">
+            <main className="min-h-0 flex-1 overflow-y-auto bg-dot-grid px-6 py-8">
                 <div className="pb-8">
-                    <div className="mx-auto max-w-5xl text-center">
+                    <div className="mx-auto max-w-6xl text-center">
                         <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">我的素材</h1>
                         <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">收藏常用文本和图片，按类型、标题和标签快速查找。</p>
                     </div>
@@ -271,10 +272,8 @@ export default function AssetsPage() {
                                             key={option.value}
                                             type="button"
                                             className={cn(
-                                                "prompt-filter-tag cursor-pointer rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors",
-                                                kindFilter === option.value
-                                                    ? "is-active border-primary bg-primary text-primary-foreground"
-                                                    : "border-stone-200 text-stone-600 hover:border-stone-300 hover:text-stone-900 dark:border-stone-700 dark:text-stone-400 dark:hover:border-stone-600 dark:hover:text-stone-200"
+                                                "prompt-filter-tag cursor-pointer",
+                                                kindFilter === option.value && "is-active",
                                             )}
                                             onClick={() => {
                                                 setPage(1);
@@ -315,8 +314,15 @@ export default function AssetsPage() {
 
                 <div className="mx-auto flex max-w-7xl flex-col gap-5">
                     <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {visibleAssets.map((asset) => (
-                            <AssetCard key={asset.id} asset={asset} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
+                        {visibleAssets.map((asset, index) => (
+                            <motion.div
+                                key={asset.id}
+                                initial={{ opacity: 0, y: 12 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.3, delay: index * 0.04, ease: "easeOut" }}
+                            >
+                                <AssetCard asset={asset} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
+                            </motion.div>
                         ))}
                     </div>
 
@@ -512,7 +518,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
     const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
     const summary = assetSummary(asset);
     return (
-        <Card className="overflow-hidden hover:shadow-md transition-shadow">
+        <Card className="overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
             <CardContent className="p-0">
                 <button type="button" className="block w-full text-left" onClick={onOpen}>
                     {cover ? (

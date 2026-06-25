@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Download, FileUp, Plus } from "lucide-react";
+import { motion } from "motion/react";
 
 import { Button } from "@/components/ui/button";
 import { message } from "@/lib/message";
@@ -110,11 +111,6 @@ function CanvasPageInner() {
                                 </Button>
                             </>
                         ) : null}
-                        {projects.length ? (
-                            <Button variant="outline" disabled={!hydrated} onClick={() => setDeleteIds(projects.map((project) => project.id))}>
-                                删除全部
-                            </Button>
-                        ) : null}
                         <Button variant="outline" disabled={!hydrated} onClick={() => inputRef.current?.click()}>
                             <FileUp className="size-4" /> 导入画布
                         </Button>
@@ -128,8 +124,15 @@ function CanvasPageInner() {
                     <section className="flex min-h-[360px] items-center justify-center border-y border-stone-200 text-sm text-stone-500 dark:border-stone-800">正在加载画布...</section>
                 ) : projects.length ? (
                     <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                        {projects.map((project) => (
-                            <CanvasProjectCard key={project.id} project={project} />
+                        {projects.map((project, index) => (
+                            <motion.div
+                                key={project.id}
+                                initial={{ opacity: 0, y: 12 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.3, delay: index * 0.04, ease: "easeOut" }}
+                            >
+                                <CanvasProjectCard project={project} />
+                            </motion.div>
                         ))}
                     </div>
                 ) : (

@@ -24,7 +24,7 @@ export function PromptCard({
     extraAction?: ReactNode;
 }) {
     return (
-        <Card className="overflow-hidden hover:shadow-md transition-shadow">
+        <Card className="overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
             <button type="button" className="block w-full text-left" onClick={onOpen}>
                 <img src={item.coverUrl} alt={item.title} className="aspect-[4/3] w-full object-cover" />
             </button>

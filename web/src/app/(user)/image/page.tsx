@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
+import { TaskProgress } from "@/components/task-progress";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -36,6 +37,7 @@ type GenerationResult = {
     status: "pending" | "success" | "failed";
     image?: GeneratedImage;
     error?: string;
+    progressText?: string;
 };
 
 type GenerationLog = {
@@ -293,7 +295,12 @@ export default function ImagePage() {
                 : await submitImageGeneration({ channelId: serverChannelId, model: modelName, prompt: snapshot.text, n: 1, quality: snapshot.config.quality, size: snapshot.config.size });
             const taskResult = await new Promise<{ files: Array<{ fileId: string; url: string; mimeType: string; size: number }> }>((resolve, reject) => {
                 const unsub = backendWs.onTask(task.taskId, (msg) => {
-                    if (msg.type === "task.status") return;
+                    if (msg.type === "task.status") {
+                        if (msg.progressText) {
+                            setResults((value) => updateResultAt(value, index, { progressText: msg.progressText }));
+                        }
+                        return;
+                    }
                     unsub();
                     if (msg.type === "task.completed" && msg.result) resolve({ files: msg.result.files || [] });
                     else reject(new Error(msg.error || "生成失败"));
@@ -443,7 +450,7 @@ export default function ImagePage() {
                                     ) : result.status === "failed" ? (
                                         <FailedImageCard key={result.id} error={result.error || "生成失败"} onRetry={() => retryResult(index)} />
                                     ) : (
-                                        <PendingImageCard key={result.id} />
+                                        <PendingImageCard key={result.id} progressText={result.progressText} />
                                     ),
                                 )}
                             </div>
@@ -554,7 +561,7 @@ function ResultImageCard({
     );
 }
 
-function PendingImageCard() {
+function PendingImageCard({ progressText }: { progressText?: string }) {
     return (
         <div className="relative aspect-square overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
             <div
@@ -564,9 +571,8 @@ function PendingImageCard() {
                     backgroundSize: "16px 16px",
                 }}
             />
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
-                <LoaderCircle className="size-6 animate-spin" />
-                <span>生成中</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <TaskProgress progressText={progressText} />
             </div>
         </div>
     );

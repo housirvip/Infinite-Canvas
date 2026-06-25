@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -43,10 +45,10 @@ type EncryptionConfig struct {
 }
 
 type StorageConfig struct {
-	Type           string `yaml:"type"`
-	LocalDir       string `yaml:"localDir"`
-	MaxFileSizeMB  int    `yaml:"maxFileSizeMB"`
-	BaseURL        string `yaml:"baseURL"`
+	Type          string `yaml:"type"`
+	LocalDir      string `yaml:"localDir"`
+	MaxFileSizeMB int    `yaml:"maxFileSizeMB"`
+	BaseURL       string `yaml:"baseURL"`
 }
 
 type SchedulerConfig struct {
@@ -58,12 +60,33 @@ type LogConfig struct {
 	Level string `yaml:"level"`
 }
 
+const minJWTSecretLength = 32
+
+func (c *Config) ValidateStartup() error {
+	c.Auth.JWTSecret = strings.TrimSpace(c.Auth.JWTSecret)
+	c.Encryption.MasterKey = strings.TrimSpace(c.Encryption.MasterKey)
+
+	switch {
+	case c.Auth.JWTSecret == "":
+		return fmt.Errorf("auth.jwtSecret must be configured")
+	case c.Auth.JWTSecret == "change-me-in-production":
+		return fmt.Errorf("auth.jwtSecret must not use the default placeholder")
+	case len(c.Auth.JWTSecret) < minJWTSecretLength:
+		return fmt.Errorf("auth.jwtSecret must be at least %d characters", minJWTSecretLength)
+	case c.Encryption.MasterKey == "":
+		return fmt.Errorf("encryption.masterKey must be configured")
+	}
+
+	return nil
+}
+
 func Load(path string) (*Config, error) {
 	cfg := defaultConfig()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			applyEnvOverrides(cfg)
 			return cfg, nil
 		}
 		return nil, err
@@ -73,8 +96,17 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
 		return nil, err
 	}
-
+	applyEnvOverrides(cfg)
 	return cfg, nil
+}
+
+func applyEnvOverrides(cfg *Config) {
+	if v := strings.TrimSpace(os.Getenv("JWT_SECRET")); v != "" {
+		cfg.Auth.JWTSecret = v
+	}
+	if v := strings.TrimSpace(os.Getenv("ENCRYPTION_MASTER_KEY")); v != "" {
+		cfg.Encryption.MasterKey = v
+	}
 }
 
 func defaultConfig() *Config {

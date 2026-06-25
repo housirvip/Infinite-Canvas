@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -19,27 +23,23 @@ func NewProxyHandler() *ProxyHandler {
 }
 
 func (h *ProxyHandler) WebDAVProxy(c *gin.Context) {
-	target := c.GetHeader("x-webdav-target")
-	method := strings.ToUpper(c.GetHeader("x-webdav-method"))
-	if target == "" {
-		c.String(http.StatusBadRequest, "Missing x-webdav-target")
+	targetURL, targetAddr, err := validateWebDAVTarget(c.Request.Context(), c.GetHeader("x-webdav-target"))
+	if err != nil {
+		c.String(http.StatusBadRequest, err.Error())
 		return
-	}
-	if method == "" {
-		method = "GET"
 	}
 
-	if !strings.HasPrefix(target, "http://") && !strings.HasPrefix(target, "https://") {
-		c.String(http.StatusBadRequest, "Unsupported WebDAV target")
-		return
+	method := strings.ToUpper(c.GetHeader("x-webdav-method"))
+	if method == "" {
+		method = http.MethodGet
 	}
 
 	var body io.Reader
-	if method != "GET" && method != "HEAD" {
+	if method != http.MethodGet && method != http.MethodHead {
 		body = c.Request.Body
 	}
 
-	req, err := http.NewRequestWithContext(c.Request.Context(), method, target, body)
+	req, err := http.NewRequestWithContext(c.Request.Context(), method, targetURL.String(), body)
 	if err != nil {
 		c.String(http.StatusBadRequest, "Invalid target URL")
 		return
@@ -58,7 +58,22 @@ func (h *ProxyHandler) WebDAVProxy(c *gin.Context) {
 		}
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy: nil,
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				port := targetURL.Port()
+				if port == "" {
+					port = defaultWebDAVPort(targetURL.Scheme)
+				}
+				return (&net.Dialer{Timeout: 30 * time.Second}).DialContext(ctx, network, net.JoinHostPort(targetAddr.String(), port))
+			},
+		},
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		c.String(http.StatusBadGateway, "WebDAV proxy error: %s", err.Error())
@@ -72,12 +87,79 @@ func (h *ProxyHandler) WebDAVProxy(c *gin.Context) {
 		}
 	}
 
-	if method == "HEAD" {
+	if method == http.MethodHead {
 		c.Status(resp.StatusCode)
 		return
 	}
 
 	c.DataFromReader(resp.StatusCode, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
+}
+
+func validateWebDAVTarget(ctx context.Context, rawTarget string) (*url.URL, netip.Addr, error) {
+	target := strings.TrimSpace(rawTarget)
+	if target == "" {
+		return nil, netip.Addr{}, fmt.Errorf("Missing x-webdav-target")
+	}
+
+	targetURL, err := url.Parse(target)
+	if err != nil {
+		return nil, netip.Addr{}, fmt.Errorf("Invalid target URL")
+	}
+	if targetURL.Hostname() == "" {
+		return nil, netip.Addr{}, fmt.Errorf("Invalid target URL")
+	}
+
+	switch strings.ToLower(targetURL.Scheme) {
+	case "http", "https":
+	default:
+		return nil, netip.Addr{}, fmt.Errorf("Unsupported WebDAV target")
+	}
+
+	targetAddr, err := resolveWebDAVHost(ctx, targetURL.Hostname())
+	if err != nil {
+		return nil, netip.Addr{}, err
+	}
+
+	return targetURL, targetAddr, nil
+}
+
+func resolveWebDAVHost(ctx context.Context, hostname string) (netip.Addr, error) {
+	if strings.EqualFold(hostname, "localhost") {
+		return netip.Addr{}, fmt.Errorf("Unsafe WebDAV target")
+	}
+
+	if addr, err := netip.ParseAddr(hostname); err == nil {
+		if err := validatePublicAddr(addr); err != nil {
+			return netip.Addr{}, fmt.Errorf("Unsafe WebDAV target")
+		}
+		return addr.Unmap(), nil
+	}
+
+	resolved, err := net.DefaultResolver.LookupNetIP(ctx, "ip", hostname)
+	if err != nil || len(resolved) == 0 {
+		return netip.Addr{}, fmt.Errorf("Invalid target URL")
+	}
+	for _, addr := range resolved {
+		if err := validatePublicAddr(addr); err == nil {
+			return addr.Unmap(), nil
+		}
+	}
+	return netip.Addr{}, fmt.Errorf("Unsafe WebDAV target")
+}
+
+func validatePublicAddr(addr netip.Addr) error {
+	addr = addr.Unmap()
+	if !addr.IsValid() || addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() {
+		return fmt.Errorf("unsafe address")
+	}
+	return nil
+}
+
+func defaultWebDAVPort(scheme string) string {
+	if strings.EqualFold(scheme, "https") {
+		return "443"
+	}
+	return "80"
 }
 
 // --- Prompts Aggregator ---

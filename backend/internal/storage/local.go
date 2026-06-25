@@ -25,8 +25,12 @@ func NewLocalStorage(baseDir, baseURL string) (*LocalStorage, error) {
 }
 
 func (s *LocalStorage) Save(_ context.Context, fileID string, data []byte, mimeType string) (string, error) {
+	dir, err := localFileDir(s.baseDir, fileID)
+	if err != nil {
+		return "", err
+	}
+
 	ext := extFromMime(mimeType)
-	dir := filepath.Join(s.baseDir, fileID[:2])
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", err
 	}
@@ -41,7 +45,11 @@ func (s *LocalStorage) Save(_ context.Context, fileID string, data []byte, mimeT
 }
 
 func (s *LocalStorage) Load(_ context.Context, fileID string) ([]byte, string, error) {
-	dir := filepath.Join(s.baseDir, fileID[:2])
+	dir, err := localFileDir(s.baseDir, fileID)
+	if err != nil {
+		return nil, "", err
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, "", fmt.Errorf("file not found: %s", fileID)
@@ -67,7 +75,11 @@ func (s *LocalStorage) Load(_ context.Context, fileID string) ([]byte, string, e
 }
 
 func (s *LocalStorage) Delete(_ context.Context, fileID string) error {
-	dir := filepath.Join(s.baseDir, fileID[:2])
+	dir, err := localFileDir(s.baseDir, fileID)
+	if err != nil {
+		return err
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -81,7 +93,31 @@ func (s *LocalStorage) Delete(_ context.Context, fileID string) error {
 }
 
 func (s *LocalStorage) URL(fileID string) string {
+	if err := validateLocalFileID(fileID); err != nil {
+		return ""
+	}
 	return s.baseURL + "/" + fileID
+}
+
+func localFileDir(baseDir, fileID string) (string, error) {
+	if err := validateLocalFileID(fileID); err != nil {
+		return "", err
+	}
+	return filepath.Join(baseDir, fileID[:2]), nil
+}
+
+func validateLocalFileID(fileID string) error {
+	if len(fileID) < 3 {
+		return fmt.Errorf("invalid file id")
+	}
+	for i := 0; i < len(fileID); i++ {
+		ch := fileID[i]
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' {
+			continue
+		}
+		return fmt.Errorf("invalid file id")
+	}
+	return nil
 }
 
 func extFromMime(mimeType string) string {

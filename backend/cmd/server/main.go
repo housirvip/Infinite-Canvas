@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/infinite-canvas/backend/internal/auth"
@@ -29,14 +30,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
-
-	if cfg.Encryption.MasterKey == "" {
-		key := make([]byte, 32)
-		if _, err := rand.Read(key); err != nil {
-			log.Fatalf("failed to generate master key: %v", err)
-		}
-		cfg.Encryption.MasterKey = hex.EncodeToString(key)
-		log.Printf("WARNING: no ENCRYPTION_MASTER_KEY set, using random key (data will be lost on restart)")
+	if err := cfg.ValidateStartup(); err != nil {
+		log.Fatalf("invalid startup config: %v", err)
 	}
 
 	aesCrypto, err := crypto.NewAES(cfg.Encryption.MasterKey)
@@ -147,7 +142,7 @@ func main() {
 	// Proxy (prompts aggregator + WebDAV)
 	proxyHandler := handler.NewProxyHandler()
 	api.GET("/prompts", proxyHandler.Prompts)
-	api.POST("/webdav-proxy", proxyHandler.WebDAVProxy)
+	api.POST("/webdav-proxy", middleware.AuthRequired(jwtMgr), proxyHandler.WebDAVProxy)
 
 	// Admin
 	adminHandler := handler.NewAdminHandler(db)
@@ -156,6 +151,11 @@ func main() {
 	adminGroup.GET("/users", adminHandler.ListUsers)
 	adminGroup.PUT("/users/:id", adminHandler.UpdateUser)
 
+	if staticDir := resolveFrontendDistDir(); staticDir != "" {
+		log.Printf("serving frontend from %s", staticDir)
+		registerFrontendRoutes(r, staticDir)
+	}
+
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("starting server on %s (db=%s)", addr, cfg.Database.Driver)
 
@@ -163,4 +163,41 @@ func main() {
 		log.Fatalf("server error: %v", err)
 		os.Exit(1)
 	}
+}
+
+func resolveFrontendDistDir() string {
+	for _, dir := range []string{"/app/web/dist", "web/dist"} {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+	return ""
+}
+
+func registerFrontendRoutes(r *gin.Engine, distDir string) {
+	r.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if path == "/api/v1" || strings.HasPrefix(path, "/api/v1/") {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		serveFrontendAsset(c, distDir)
+	})
+}
+
+func serveFrontendAsset(c *gin.Context, distDir string) {
+	relPath := strings.TrimPrefix(filepath.Clean("/"+c.Request.URL.Path), "/")
+	if relPath != "" {
+		assetPath := filepath.Join(distDir, relPath)
+		if info, err := os.Stat(assetPath); err == nil && !info.IsDir() {
+			c.File(assetPath)
+			return
+		}
+	}
+
+	c.File(filepath.Join(distDir, "index.html"))
 }

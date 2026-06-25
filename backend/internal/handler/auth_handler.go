@@ -82,6 +82,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		"user":   user,
 		"tokens": tokens,
 	})
+
+	writeAuditLog(h.db, &model.AuditLog{
+		UserID:   user.ID,
+		Username: user.Username,
+		Action:   "user.register",
+		Resource: "user",
+		IP:       c.ClientIP(),
+	})
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -93,11 +101,26 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	var user model.User
 	if err := h.db.Where("username = ?", req.Username).First(&user).Error; err != nil {
+		writeAuditLog(h.db, &model.AuditLog{
+			Username: req.Username,
+			Action:   "user.login_failed",
+			Resource: "user",
+			Detail:   "invalid username",
+			IP:       c.ClientIP(),
+		})
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
 
 	if !auth.CheckPassword(user.PasswordHash, req.Password) {
+		writeAuditLog(h.db, &model.AuditLog{
+			UserID:   user.ID,
+			Username: user.Username,
+			Action:   "user.login_failed",
+			Resource: "user",
+			Detail:   "wrong password",
+			IP:       c.ClientIP(),
+		})
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
@@ -111,6 +134,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"user":   user,
 		"tokens": tokens,
+	})
+
+	writeAuditLog(h.db, &model.AuditLog{
+		UserID:   user.ID,
+		Username: user.Username,
+		Action:   "user.login",
+		Resource: "user",
+		IP:       c.ClientIP(),
 	})
 }
 

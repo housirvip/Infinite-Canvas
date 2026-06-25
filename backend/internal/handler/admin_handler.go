@@ -34,6 +34,9 @@ func (h *AdminHandler) ListAuditLogs(c *gin.Context) {
 	if userID := c.Query("userId"); userID != "" {
 		query = query.Where("user_id = ?", userID)
 	}
+	if modelName := c.Query("model"); modelName != "" {
+		query = query.Where("model = ?", modelName)
+	}
 
 	var total int64
 	query.Count(&total)

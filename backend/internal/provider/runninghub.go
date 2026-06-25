@@ -17,16 +17,21 @@ import (
 	"github.com/infinite-canvas/backend/internal/storage"
 )
 
-const (
-	runninghubBaseURL  = "https://www.runninghub.cn"
-	runninghubPollMS   = 4000
-	runninghubTimeoutS = 600
-)
+const runninghubBaseURL = "https://www.runninghub.cn"
 
-type RunningHubProvider struct{}
+type RunningHubProvider struct {
+	pollMs   int
+	timeoutS int
+}
 
-func NewRunningHubProvider() *RunningHubProvider {
-	return &RunningHubProvider{}
+func NewRunningHubProvider(pollMs, timeoutS int) *RunningHubProvider {
+	if pollMs <= 0 {
+		pollMs = 4000
+	}
+	if timeoutS <= 0 {
+		timeoutS = 600
+	}
+	return &RunningHubProvider{pollMs: pollMs, timeoutS: timeoutS}
 }
 
 func (p *RunningHubProvider) Name() string { return "runninghub" }
@@ -61,7 +66,7 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 	}
 	timeout := params.Timeout
 	if timeout <= 0 {
-		timeout = runninghubTimeoutS
+		timeout = p.timeoutS
 	}
 
 	onProgress(5, "上传媒体文件...")
@@ -226,12 +231,12 @@ type rhResult struct {
 func (p *RunningHubProvider) pollTask(ctx context.Context, apiKey, taskID string, timeoutS int,
 	onProgress ProgressFunc) ([]rhResult, error) {
 
-	maxAttempts := (timeoutS * 1000) / runninghubPollMS
+	maxAttempts := (timeoutS * 1000) / p.pollMs
 	if maxAttempts <= 0 {
 		maxAttempts = 150
 	}
 
-	ticker := time.NewTicker(time.Duration(runninghubPollMS) * time.Millisecond)
+	ticker := time.NewTicker(time.Duration(p.pollMs) * time.Millisecond)
 	defer ticker.Stop()
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -245,7 +250,7 @@ func (p *RunningHubProvider) pollTask(ctx context.Context, apiKey, taskID string
 		if progress > 80 {
 			progress = 80
 		}
-		onProgress(progress, fmt.Sprintf("执行中... (%ds)", (attempt+1)*runninghubPollMS/1000))
+		onProgress(progress, fmt.Sprintf("执行中... (%ds)", (attempt+1)*p.pollMs/1000))
 
 		body, _ := json.Marshal(map[string]string{"taskId": taskID})
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost,

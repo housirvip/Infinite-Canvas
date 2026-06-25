@@ -51,9 +51,15 @@ type StorageConfig struct {
 	BaseURL       string `yaml:"baseURL"`
 }
 
+type ProviderConfig struct {
+	PollMs   int `yaml:"pollMs"`
+	TimeoutS int `yaml:"timeoutS"`
+}
+
 type SchedulerConfig struct {
-	Concurrency map[string]int `yaml:"concurrency"`
-	QueueSize   int            `yaml:"queueSize"`
+	Concurrency map[string]int            `yaml:"concurrency"`
+	QueueSize   int                       `yaml:"queueSize"`
+	Providers   map[string]ProviderConfig `yaml:"providers"`
 }
 
 type LogConfig struct {
@@ -141,6 +147,11 @@ func defaultConfig() *Config {
 				"audio":        5,
 			},
 			QueueSize: 100,
+			Providers: map[string]ProviderConfig{
+				"openai_video": {PollMs: 2500, TimeoutS: 300},
+				"seedance":     {PollMs: 5000, TimeoutS: 600},
+				"runninghub":   {PollMs: 4000, TimeoutS: 600},
+			},
 		},
 		Log: LogConfig{
 			Level: "info",

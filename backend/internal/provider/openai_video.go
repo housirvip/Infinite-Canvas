@@ -17,10 +17,19 @@ import (
 	"github.com/infinite-canvas/backend/internal/storage"
 )
 
-type OpenAIVideoProvider struct{}
+type OpenAIVideoProvider struct {
+	pollMs   int
+	timeoutS int
+}
 
-func NewOpenAIVideoProvider() *OpenAIVideoProvider {
-	return &OpenAIVideoProvider{}
+func NewOpenAIVideoProvider(pollMs, timeoutS int) *OpenAIVideoProvider {
+	if pollMs <= 0 {
+		pollMs = 2500
+	}
+	if timeoutS <= 0 {
+		timeoutS = 300
+	}
+	return &OpenAIVideoProvider{pollMs: pollMs, timeoutS: timeoutS}
 }
 
 func (p *OpenAIVideoProvider) Name() string { return "openai_video" }
@@ -149,18 +158,23 @@ func (p *OpenAIVideoProvider) submitVideo(ctx context.Context, apiKey, baseURL s
 func (p *OpenAIVideoProvider) pollAndDownload(ctx context.Context, apiKey, baseURL, taskID string,
 	onProgress ProgressFunc) ([]byte, error) {
 
-	ticker := time.NewTicker(2500 * time.Millisecond)
+	maxAttempts := p.timeoutS * 1000 / p.pollMs
+	if maxAttempts <= 0 {
+		maxAttempts = 120
+	}
+
+	ticker := time.NewTicker(time.Duration(p.pollMs) * time.Millisecond)
 	defer ticker.Stop()
 
-	for attempt := 0; attempt < 120; attempt++ {
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-ticker.C:
 		}
 
-		progress := 10 + (attempt * 70 / 120)
-		onProgress(progress, fmt.Sprintf("生成中... (%ds)", (attempt+1)*3))
+		progress := 10 + (attempt * 70 / maxAttempts)
+		onProgress(progress, fmt.Sprintf("生成中... (%ds)", (attempt+1)*p.pollMs/1000))
 
 		url := fmt.Sprintf("%s/videos/%s", strings.TrimSuffix(baseURL, "/"), taskID)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -197,7 +211,7 @@ func (p *OpenAIVideoProvider) pollAndDownload(ctx context.Context, apiKey, baseU
 		}
 	}
 
-	return nil, fmt.Errorf("video generation timed out after 5 minutes")
+	return nil, fmt.Errorf("video generation timed out after %d seconds", p.timeoutS)
 }
 
 func (p *OpenAIVideoProvider) downloadContent(ctx context.Context, apiKey, baseURL, taskID string) ([]byte, error) {

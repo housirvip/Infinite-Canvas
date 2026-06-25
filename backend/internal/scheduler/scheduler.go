@@ -24,7 +24,7 @@ type Scheduler struct {
 	hub        *ws.Hub
 	providers  map[string]provider.Provider
 	semaphores map[string]chan struct{}
-	taskChan   chan string
+	notifyChan chan struct{}
 	cancelMap  sync.Map
 	fileStore  storage.FileStorage
 	aesCrypto  *crypto.AESCrypto
@@ -39,7 +39,7 @@ func New(db *gorm.DB, hub *ws.Hub, fileStore storage.FileStorage,
 		hub:        hub,
 		providers:  make(map[string]provider.Provider),
 		semaphores: make(map[string]chan struct{}),
-		taskChan:   make(chan string, cfg.QueueSize),
+		notifyChan: make(chan struct{}, 1),
 		fileStore:  fileStore,
 		aesCrypto:  aesCrypto,
 		cfg:        cfg,
@@ -47,9 +47,9 @@ func New(db *gorm.DB, hub *ws.Hub, fileStore storage.FileStorage,
 
 	providerList := []provider.Provider{
 		provider.NewOpenAIImageProvider(),
-		provider.NewOpenAIVideoProvider(),
-		provider.NewSeedanceVideoProvider(),
-		provider.NewRunningHubProvider(),
+		provider.NewOpenAIVideoProvider(cfg.Providers["openai_video"].PollMs, cfg.Providers["openai_video"].TimeoutS),
+		provider.NewSeedanceVideoProvider(cfg.Providers["seedance"].PollMs, cfg.Providers["seedance"].TimeoutS),
+		provider.NewRunningHubProvider(cfg.Providers["runninghub"].PollMs, cfg.Providers["runninghub"].TimeoutS),
 		provider.NewAudioProvider(),
 	}
 
@@ -72,14 +72,8 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 func (s *Scheduler) Enqueue(taskID string) {
 	select {
-	case s.taskChan <- taskID:
+	case s.notifyChan <- struct{}{}:
 	default:
-		log.Printf("scheduler: queue full, dropping task %s", taskID)
-		s.db.Model(&model.Task{}).Where("task_id = ?", taskID).
-			Updates(map[string]any{
-				"status":        model.TaskStatusFailed,
-				"error_message": "任务队列已满，请稍后重试",
-			})
 	}
 }
 
@@ -120,7 +114,7 @@ func (s *Scheduler) CreateTask(userID uint, taskType model.TaskType, providerNam
 	s.hub.SendToUser(userID, &ws.Message{
 		Type:         ws.MsgTypeTaskStatus,
 		TaskID:       taskID,
-		Status:       string(model.TaskStatusQueued),
+		Status:       string(model.TaskStatusPending),
 		Progress:     0,
 		ProgressText: "排队中...",
 	})
@@ -129,48 +123,61 @@ func (s *Scheduler) CreateTask(userID uint, taskType model.TaskType, providerNam
 }
 
 func (s *Scheduler) run(ctx context.Context) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
 	for {
+		s.pollAndDispatch(ctx)
 		select {
 		case <-ctx.Done():
 			return
-		case taskID := <-s.taskChan:
-			go s.dispatch(ctx, taskID)
+		case <-s.notifyChan:
+		case <-ticker.C:
 		}
 	}
 }
 
-func (s *Scheduler) dispatch(parentCtx context.Context, taskID string) {
-	var task model.Task
-	if err := s.db.Where("task_id = ?", taskID).First(&task).Error; err != nil {
-		log.Printf("scheduler: task %s not found: %v", taskID, err)
-		return
+func (s *Scheduler) pollAndDispatch(ctx context.Context) {
+	var tasks []model.Task
+	s.db.Where("status = ?", model.TaskStatusPending).
+		Order("created_at ASC").
+		Limit(50).
+		Find(&tasks)
+
+	for i := range tasks {
+		if ctx.Err() != nil {
+			return
+		}
+		task := &tasks[i]
+
+		_, ok := s.providers[task.Provider]
+		if !ok {
+			s.failTask(task, "unknown provider: "+task.Provider)
+			continue
+		}
+
+		sem := s.semaphores[task.Provider]
+		select {
+		case sem <- struct{}{}:
+			result := s.db.Model(&model.Task{}).
+				Where("task_id = ? AND status = ?", task.TaskID, model.TaskStatusPending).
+				Update("status", model.TaskStatusQueued)
+			if result.RowsAffected == 0 {
+				<-sem
+				continue
+			}
+			s.hub.SendToUser(task.UserID, &ws.Message{
+				Type:         ws.MsgTypeTaskStatus,
+				TaskID:       task.TaskID,
+				Status:       string(model.TaskStatusQueued),
+				ProgressText: "等待执行...",
+			})
+			go s.dispatch(ctx, task, sem)
+		default:
+		}
 	}
+}
 
-	if task.IsTerminal() {
-		return
-	}
-
-	p, ok := s.providers[task.Provider]
-	if !ok {
-		s.failTask(&task, "unknown provider: "+task.Provider)
-		return
-	}
-
-	sem := s.semaphores[task.Provider]
-
-	s.db.Model(&task).Update("status", model.TaskStatusQueued)
-	s.hub.SendToUser(task.UserID, &ws.Message{
-		Type:         ws.MsgTypeTaskStatus,
-		TaskID:       task.TaskID,
-		Status:       string(model.TaskStatusQueued),
-		ProgressText: "等待执行槽位...",
-	})
-
-	select {
-	case sem <- struct{}{}:
-	case <-parentCtx.Done():
-		return
-	}
+func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem chan struct{}) {
 	defer func() { <-sem }()
 
 	ctx, cancel := context.WithCancel(parentCtx)
@@ -181,7 +188,8 @@ func (s *Scheduler) dispatch(parentCtx context.Context, taskID string) {
 	}()
 
 	now := time.Now()
-	s.db.Model(&task).Updates(map[string]any{
+	task.StartedAt = &now
+	s.db.Model(task).Updates(map[string]any{
 		"status":     model.TaskStatusRunning,
 		"started_at": now,
 	})
@@ -194,14 +202,14 @@ func (s *Scheduler) dispatch(parentCtx context.Context, taskID string) {
 		ProgressText: "开始执行...",
 	})
 
-	apiKey, baseURL, err := s.resolveChannel(&task)
+	apiKey, baseURL, err := s.resolveChannel(task)
 	if err != nil {
-		s.failTask(&task, err.Error())
+		s.failTask(task, err.Error())
 		return
 	}
 
 	onProgress := func(progress int, text string) {
-		s.db.Model(&task).Updates(map[string]any{
+		s.db.Model(task).Updates(map[string]any{
 			"progress":      progress,
 			"progress_text": text,
 		})
@@ -214,12 +222,13 @@ func (s *Scheduler) dispatch(parentCtx context.Context, taskID string) {
 		})
 	}
 
-	result, err := p.Execute(ctx, &task, apiKey, baseURL, s.fileStore, onProgress)
+	p := s.providers[task.Provider]
+	result, err := p.Execute(ctx, task, apiKey, baseURL, s.fileStore, onProgress)
 	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		s.failTask(&task, err.Error())
+		s.failTask(task, err.Error())
 		return
 	}
 
@@ -231,7 +240,7 @@ func (s *Scheduler) dispatch(parentCtx context.Context, taskID string) {
 	fileIDsJSON, _ := json.Marshal(fileIDs)
 
 	completedAt := time.Now()
-	s.db.Model(&task).Updates(map[string]any{
+	s.db.Model(task).Updates(map[string]any{
 		"status":           model.TaskStatusSuccess,
 		"progress":         100,
 		"progress_text":    "完成",
@@ -248,7 +257,7 @@ func (s *Scheduler) dispatch(parentCtx context.Context, taskID string) {
 		Result: result,
 	})
 
-	s.writeAuditLog(task.UserID, "task.completed", "task", task.TaskID, nil)
+	s.writeAuditLog(task, "task.completed", completedAt.Sub(now).Milliseconds(), nil)
 }
 
 func (s *Scheduler) failTask(task *model.Task, errMsg string) {
@@ -266,7 +275,11 @@ func (s *Scheduler) failTask(task *model.Task, errMsg string) {
 		Error:  errMsg,
 	})
 
-	s.writeAuditLog(task.UserID, "task.failed", "task", task.TaskID, map[string]string{"error": errMsg})
+	var rtMs int64
+	if task.StartedAt != nil {
+		rtMs = completedAt.Sub(*task.StartedAt).Milliseconds()
+	}
+	s.writeAuditLog(task, "task.failed", rtMs, map[string]string{"error": errMsg})
 }
 
 func (s *Scheduler) resolveChannel(task *model.Task) (apiKey, baseURL string, err error) {
@@ -307,21 +320,27 @@ func (s *Scheduler) resolveChannel(task *model.Task) (apiKey, baseURL string, er
 }
 
 func (s *Scheduler) recoverTasks() {
-	var tasks []model.Task
-	s.db.Where("status IN ?", []model.TaskStatus{model.TaskStatusRunning, model.TaskStatusQueued}).Find(&tasks)
-
-	for _, task := range tasks {
-		s.db.Model(&task).Update("status", model.TaskStatusPending)
-		s.Enqueue(task.TaskID)
-		log.Printf("scheduler: recovered task %s", task.TaskID)
+	result := s.db.Model(&model.Task{}).
+		Where("status IN ?", []model.TaskStatus{model.TaskStatusRunning, model.TaskStatusQueued}).
+		Update("status", model.TaskStatusPending)
+	if result.RowsAffected > 0 {
+		log.Printf("scheduler: recovered %d tasks", result.RowsAffected)
 	}
 }
 
-func (s *Scheduler) writeAuditLog(userID uint, action, resource, resourceID string, detail any) {
+func (s *Scheduler) writeAuditLog(task *model.Task, action string, responseTimeMs int64, detail any) {
 	var username string
 	var user model.User
-	if s.db.First(&user, userID).Error == nil {
+	if s.db.First(&user, task.UserID).Error == nil {
 		username = user.Username
+	}
+
+	var channelName string
+	if task.ChannelID > 0 {
+		var ch model.ApiChannel
+		if s.db.Select("name").First(&ch, task.ChannelID).Error == nil {
+			channelName = ch.Name
+		}
 	}
 
 	detailJSON := ""
@@ -331,11 +350,15 @@ func (s *Scheduler) writeAuditLog(userID uint, action, resource, resourceID stri
 	}
 
 	s.db.Create(&model.AuditLog{
-		UserID:     userID,
-		Username:   username,
-		Action:     action,
-		Resource:   resource,
-		ResourceID: resourceID,
-		Detail:     detailJSON,
+		UserID:         task.UserID,
+		Username:       username,
+		Action:         action,
+		Resource:       "task",
+		ResourceID:     task.TaskID,
+		Model:          task.Model,
+		ChannelID:      task.ChannelID,
+		ChannelName:    channelName,
+		ResponseTimeMs: responseTimeMs,
+		Detail:         detailJSON,
 	})
 }

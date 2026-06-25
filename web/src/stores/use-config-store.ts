@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 import * as channelApi from "@/services/backend-channel";
 import * as settingsApi from "@/services/backend-settings";
 
-export type ApiCallFormat = "openai-response" | "openai-completion" | "gemini";
+export type ApiCallFormat = "openai-response" | "openai-completion" | "gemini" | "anthropic";
 
 export type ModelChannel = {
     id: string;
@@ -60,19 +60,20 @@ export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 
 export const defaultConfig: AiConfig = {
     channelMode: "remote",
     baseUrl: OPENAI_BASE_URL,
     apiKey: "",
-    apiFormat: "openai-response",
+    apiFormat: "openai-completion",
     channels: [
         {
             id: "default",
             name: "默认渠道",
             baseUrl: OPENAI_BASE_URL,
             apiKey: "",
-            apiFormat: "openai-response",
+            apiFormat: "openai-completion",
             models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
         },
     ],
@@ -406,13 +407,17 @@ function normalizeChannels(config: AiConfig) {
 }
 
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
-    return apiFormat === "gemini" ? GEMINI_BASE_URL : OPENAI_BASE_URL;
+    if (apiFormat === "gemini") return GEMINI_BASE_URL;
+    if (apiFormat === "anthropic") return ANTHROPIC_BASE_URL;
+    return OPENAI_BASE_URL;
 }
 
 function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
     if (apiFormat === "gemini") return "gemini";
     if (apiFormat === "openai-completion") return "openai-completion";
-    return "openai-response";
+    if (apiFormat === "openai-response") return "openai-response";
+    if (apiFormat === "anthropic") return "anthropic";
+    return "openai-completion";
 }
 
 function uniqueRawModels(models: string[]) {

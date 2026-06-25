@@ -527,11 +527,179 @@ async function requestCompletionStreamingResponse(config: AiConfig, body: Record
     return { content: state.text, toolCalls };
 }
 
+// --- Anthropic Messages API (anthropic) ---
+
+type AnthropicStreamState = { buffer: string; text: string; toolUseBlocks: Map<number, { id: string; name: string; input: string }>; error?: string };
+
+function toAnthropicBody(config: AiConfig, messages: ResponseInputMessage[], extra?: Record<string, unknown>) {
+    const systemParts: string[] = [];
+    if (config.systemPrompt.trim()) systemParts.push(config.systemPrompt.trim());
+
+    const rawMessages: Array<{ role: string; content: unknown }> = [];
+    for (const message of messages) {
+        if ("type" in message) {
+            if (message.type === "function_call") {
+                rawMessages.push({ role: "assistant", content: [{ type: "tool_use", id: message.call_id, name: message.name, input: jsonObject(message.arguments) }] });
+            }
+            continue;
+        }
+        if (message.role === "system") {
+            const text = typeof message.content === "string" ? message.content : message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+            if (text) systemParts.push(text);
+            continue;
+        }
+        if (message.role === "tool") {
+            rawMessages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: message.tool_call_id, content: message.content }] });
+            continue;
+        }
+        rawMessages.push({ role: message.role, content: toAnthropicContent(message.content) });
+    }
+
+    const merged: Array<{ role: string; content: unknown }> = [];
+    for (const msg of rawMessages) {
+        const last = merged[merged.length - 1];
+        if (last && last.role === msg.role) {
+            const prev = Array.isArray(last.content) ? last.content : typeof last.content === "string" && last.content ? [{ type: "text", text: last.content }] : [];
+            const next = Array.isArray(msg.content) ? msg.content : typeof msg.content === "string" && msg.content ? [{ type: "text", text: msg.content }] : [];
+            last.content = [...prev, ...next];
+        } else {
+            merged.push({ ...msg });
+        }
+    }
+
+    const system = systemParts.join("\n\n");
+    return { ...(system ? { system } : {}), messages: merged, ...extra };
+}
+
+function toAnthropicContent(content: ResponseMessageContent): string | Array<Record<string, unknown>> {
+    if (!Array.isArray(content)) return String(content || "");
+    return content.map((item) => {
+        if (item.type === "text") return { type: "text", text: item.text };
+        const match = item.image_url.url.match(/^data:([^;,]+);base64,(.+)$/);
+        if (match) return { type: "image", source: { type: "base64", media_type: match[1], data: match[2] } };
+        return { type: "image", source: { type: "url", url: item.image_url.url } };
+    });
+}
+
+function toAnthropicTools(tools: ResponseFunctionTool[]) {
+    return tools.map((tool) => ({ name: tool.function.name, description: tool.function.description, input_schema: tool.function.parameters }));
+}
+
+function toAnthropicToolChoice(toolChoice: ToolChoice) {
+    if (typeof toolChoice === "object") return { type: "tool", name: toolChoice.name };
+    if (toolChoice === "required") return { type: "any" };
+    return { type: "auto" };
+}
+
+function consumeAnthropicStreamBlock(block: string, state: AnthropicStreamState, onDelta?: (text: string) => void) {
+    const data = block
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).replace(/^ /, ""))
+        .join("\n")
+        .trim();
+    if (!data || data === "[DONE]") return;
+    const event = JSON.parse(data) as Record<string, unknown>;
+    const type = stringValue(event.type);
+
+    if (type === "error") {
+        const error = isRecord(event.error) ? event.error : undefined;
+        state.error = stringValue(error?.message) || "请求失败";
+        return;
+    }
+    if (type === "content_block_start") {
+        const index = typeof event.index === "number" ? event.index : 0;
+        const cb = isRecord(event.content_block) ? event.content_block : undefined;
+        if (stringValue(cb?.type) === "tool_use") {
+            state.toolUseBlocks.set(index, { id: stringValue(cb?.id), name: stringValue(cb?.name), input: "" });
+        }
+        return;
+    }
+    if (type === "content_block_delta") {
+        const index = typeof event.index === "number" ? event.index : 0;
+        const delta = isRecord(event.delta) ? event.delta : undefined;
+        const deltaType = stringValue(delta?.type);
+        if (deltaType === "text_delta" && typeof delta?.text === "string") {
+            state.text += delta.text;
+            onDelta?.(state.text);
+        }
+        if (deltaType === "input_json_delta" && typeof delta?.partial_json === "string") {
+            const toolBlock = state.toolUseBlocks.get(index);
+            if (toolBlock) toolBlock.input += delta.partial_json;
+        }
+        return;
+    }
+    if (type === "message_start") {
+        const message = isRecord(event.message) ? event.message : undefined;
+        const error = isRecord(message?.error) ? message.error : undefined;
+        if (error) state.error = stringValue(error.message) || "请求失败";
+    }
+}
+
+function consumeAnthropicStreamText(state: AnthropicStreamState, text: string, onDelta?: (text: string) => void, flush = false) {
+    state.buffer += text;
+    for (;;) {
+        const match = state.buffer.match(/\r?\n\r?\n/);
+        if (!match) break;
+        const matchIndex = match.index ?? 0;
+        consumeAnthropicStreamBlock(state.buffer.slice(0, matchIndex), state, onDelta);
+        state.buffer = state.buffer.slice(matchIndex + match[0].length);
+    }
+    if (flush && state.buffer.trim()) {
+        consumeAnthropicStreamBlock(state.buffer, state, onDelta);
+        state.buffer = "";
+    }
+}
+
+async function requestAnthropicStreamingResponse(config: AiConfig, body: Record<string, unknown>, onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
+    const url = chatStreamUrl(config);
+    const response = await fetch(url, {
+        method: "POST",
+        headers: chatStreamHeaders(),
+        body: JSON.stringify({ ...body, model: config.model, max_tokens: 8192, stream: true }),
+        signal: options?.signal,
+    });
+    if (!response.ok) throw new Error(await readFetchError(response, "请求失败"));
+    if (!response.body) {
+        const payload = (await response.json()) as Record<string, unknown>;
+        const content = Array.isArray(payload.content)
+            ? (payload.content as Array<Record<string, unknown>>).filter((b) => stringValue(b.type) === "text").map((b) => stringValue(b.text)).join("")
+            : "";
+        const toolCalls: ResponseToolCall[] = Array.isArray(payload.content)
+            ? (payload.content as Array<Record<string, unknown>>)
+                  .filter((b) => stringValue(b.type) === "tool_use")
+                  .map((b) => ({ id: stringValue(b.id), type: "function" as const, function: { name: stringValue(b.name), arguments: JSON.stringify(b.input || {}) } }))
+            : [];
+        return { content, toolCalls };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const state: AnthropicStreamState = { buffer: "", text: "", toolUseBlocks: new Map() };
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        consumeAnthropicStreamText(state, decoder.decode(value, { stream: true }), onDelta);
+        if (state.error) throw new Error(state.error);
+    }
+    consumeAnthropicStreamText(state, decoder.decode(), onDelta, true);
+    if (state.error) throw new Error(state.error);
+    const toolCalls: ResponseToolCall[] = Array.from(state.toolUseBlocks.values())
+        .filter((tc) => tc.id && tc.name)
+        .map((tc) => ({ id: tc.id, type: "function" as const, function: { name: tc.name, arguments: tc.input || "{}" } }));
+    return { content: state.text, toolCalls };
+}
+
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
     try {
         if (requestConfig.apiFormat === "gemini") {
             const answer = (await requestGeminiStreamingResponse(requestConfig, toGeminiBody(requestConfig, messages), onDelta, options)).content || "没有返回内容";
+            if (answer === "没有返回内容") onDelta(answer);
+            return answer;
+        }
+        if (requestConfig.apiFormat === "anthropic") {
+            const answer = (await requestAnthropicStreamingResponse(requestConfig, toAnthropicBody(requestConfig, messages), onDelta, options)).content || "没有返回内容";
             if (answer === "没有返回内容") onDelta(answer);
             return answer;
         }
@@ -559,6 +727,12 @@ export async function requestToolResponse(config: AiConfig, messages: ResponseIn
     try {
         if (requestConfig.apiFormat === "gemini") {
             return await requestGeminiStreamingResponse(requestConfig, toGeminiBody(requestConfig, messages, toGeminiToolOptions(tools, toolChoice)), onDelta, options);
+        }
+        if (requestConfig.apiFormat === "anthropic") {
+            return await requestAnthropicStreamingResponse(requestConfig, toAnthropicBody(requestConfig, messages, {
+                tools: toAnthropicTools(tools),
+                ...(tools.length ? { tool_choice: toAnthropicToolChoice(toolChoice) } : {}),
+            }), onDelta, options);
         }
         if (requestConfig.apiFormat === "openai-completion") {
             return await requestCompletionStreamingResponse(requestConfig, {

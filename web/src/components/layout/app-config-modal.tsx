@@ -24,9 +24,10 @@ const modelGroups: ModelGroup[] = [
 ];
 
 const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
-    { label: "OpenAI Response", value: "openai-response" },
     { label: "OpenAI Completion", value: "openai-completion" },
+    { label: "OpenAI Response", value: "openai-response" },
     { label: "Gemini", value: "gemini" },
+    { label: "Anthropic", value: "anthropic" },
 ];
 
 export function AppConfigModal() {
@@ -413,6 +414,7 @@ function omitKey<T>(record: Record<string, T>, key: string) {
 
 function apiFormatLabel(apiFormat: ApiCallFormat) {
     if (apiFormat === "gemini") return "Gemini";
-    if (apiFormat === "openai-completion") return "OpenAI Completion";
-    return "OpenAI Response";
+    if (apiFormat === "anthropic") return "Anthropic";
+    if (apiFormat === "openai-response") return "OpenAI Response";
+    return "OpenAI Completion";
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/infinite-canvas/backend/internal/crypto"
@@ -22,6 +24,7 @@ func NewChatHandler(db *gorm.DB, aesCrypto *crypto.AESCrypto) *ChatHandler {
 }
 
 func (h *ChatHandler) Stream(c *gin.Context) {
+	startTime := time.Now()
 	userID := middleware.GetUserID(c)
 
 	bodyBytes, err := io.ReadAll(c.Request.Body)
@@ -32,6 +35,7 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 
 	channelIDStr := c.Query("channelId")
 	apiFormat := c.Query("apiFormat")
+	modelName := c.Query("model")
 
 	var channel model.ApiChannel
 	if channelIDStr != "" {
@@ -56,26 +60,32 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		apiFormat = channel.APIFormat
 	}
 	if apiFormat == "" || apiFormat == "openai" {
-		apiFormat = "openai-response"
+		apiFormat = "openai-completion"
 	}
 
 	var upstreamURL string
-	if apiFormat == "gemini" {
-		model := c.Query("model")
-		if model == "" {
-			model = "gemini-2.0-flash"
+	switch apiFormat {
+	case "gemini":
+		if modelName == "" {
+			modelName = "gemini-2.0-flash"
 		}
 		baseURL := channel.BaseURL
 		if baseURL == "" {
 			baseURL = "https://generativelanguage.googleapis.com"
 		}
-		upstreamURL = fmt.Sprintf("%s/v1beta/models/%s:streamGenerateContent?alt=sse", baseURL, model)
-	} else if apiFormat == "openai-completion" {
-		baseURL := normalizeBaseURL(channel.BaseURL)
-		upstreamURL = baseURL + "/chat/completions"
-	} else {
+		upstreamURL = fmt.Sprintf("%s/v1beta/models/%s:streamGenerateContent?alt=sse", baseURL, modelName)
+	case "anthropic":
+		baseURL := channel.BaseURL
+		if baseURL == "" {
+			baseURL = "https://api.anthropic.com"
+		}
+		upstreamURL = strings.TrimRight(baseURL, "/") + "/v1/messages"
+	case "openai-response":
 		baseURL := normalizeBaseURL(channel.BaseURL)
 		upstreamURL = baseURL + "/responses"
+	default:
+		baseURL := normalizeBaseURL(channel.BaseURL)
+		upstreamURL = baseURL + "/chat/completions"
 	}
 
 	upstreamReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, upstreamURL, io.NopCloser(io.NewSectionReader(newByteReader(bodyBytes), 0, int64(len(bodyBytes)))))
@@ -85,14 +95,23 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 	}
 
 	upstreamReq.Header.Set("Content-Type", "application/json")
-	if apiFormat == "gemini" {
+	switch apiFormat {
+	case "gemini":
 		upstreamReq.Header.Set("x-goog-api-key", apiKey)
-	} else {
+	case "anthropic":
+		upstreamReq.Header.Set("anthropic-version", "2023-06-01")
+		if strings.Contains(upstreamURL, "anthropic.com") {
+			upstreamReq.Header.Set("x-api-key", apiKey)
+		} else {
+			upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+	default:
 		upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
 	resp, err := http.DefaultClient.Do(upstreamReq)
 	if err != nil {
+		h.recordChatAudit(userID, modelName, &channel, apiFormat, http.StatusBadGateway, startTime, c.ClientIP())
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream request failed"})
 		return
 	}
@@ -115,6 +134,23 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 			break
 		}
 	}
+
+	h.recordChatAudit(userID, modelName, &channel, apiFormat, resp.StatusCode, startTime, c.ClientIP())
+}
+
+func (h *ChatHandler) recordChatAudit(userID uint, modelName string, channel *model.ApiChannel, apiFormat string, statusCode int, startTime time.Time, ip string) {
+	writeAuditLog(h.db, &model.AuditLog{
+		UserID:         userID,
+		Action:         "chat_stream",
+		Resource:       "chat",
+		Model:          modelName,
+		ChannelID:      channel.ID,
+		ChannelName:    channel.Name,
+		APIFormat:      apiFormat,
+		StatusCode:     statusCode,
+		ResponseTimeMs: time.Since(startTime).Milliseconds(),
+		IP:             ip,
+	})
 }
 
 func normalizeBaseURL(baseURL string) string {

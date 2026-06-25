@@ -90,7 +90,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 
 	apiFormat := req.APIFormat
 	if apiFormat == "" {
-		apiFormat = "openai-response"
+		apiFormat = "openai-completion"
 	}
 
 	provider := req.Provider
@@ -121,6 +121,15 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create channel"})
 		return
 	}
+
+	writeAuditLog(h.db, &model.AuditLog{
+		UserID:     userID,
+		Action:     "channel.create",
+		Resource:   "channel",
+		ResourceID: fmt.Sprintf("%d", channel.ID),
+		Detail:     channel.Name,
+		IP:         c.ClientIP(),
+	})
 
 	c.JSON(http.StatusCreated, gin.H{
 		"channel": ChannelResponse{
@@ -185,6 +194,14 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		return
 	}
 
+	writeAuditLog(h.db, &model.AuditLog{
+		UserID:     userID,
+		Action:     "channel.update",
+		Resource:   "channel",
+		ResourceID: fmt.Sprintf("%d", id),
+		IP:         c.ClientIP(),
+	})
+
 	h.db.First(&channel, id)
 	c.JSON(http.StatusOK, gin.H{
 		"channel": ChannelResponse{
@@ -208,6 +225,14 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
 		return
 	}
+
+	writeAuditLog(h.db, &model.AuditLog{
+		UserID:     userID,
+		Action:     "channel.delete",
+		Resource:   "channel",
+		ResourceID: fmt.Sprintf("%d", id),
+		IP:         c.ClientIP(),
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "channel deleted"})
 }
@@ -235,21 +260,34 @@ func (h *ChannelHandler) ListModels(c *gin.Context) {
 
 	apiFormat := channel.APIFormat
 	if apiFormat == "" || apiFormat == "openai" {
-		apiFormat = "openai-response"
+		apiFormat = "openai-completion"
 	}
 
 	var upstreamURL string
 	var req *http.Request
 
 	baseURL := strings.TrimRight(channel.BaseURL, "/")
-	if apiFormat == "gemini" {
+	switch apiFormat {
+	case "gemini":
 		if !strings.HasSuffix(strings.ToLower(baseURL), "/v1beta") && !strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
 			baseURL += "/v1beta"
 		}
 		upstreamURL = baseURL + "/models"
 		req, _ = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
 		req.Header.Set("x-goog-api-key", apiKey)
-	} else {
+	case "anthropic":
+		if baseURL == "" {
+			baseURL = "https://api.anthropic.com"
+		}
+		upstreamURL = baseURL + "/v1/models"
+		req, _ = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		req.Header.Set("anthropic-version", "2023-06-01")
+		if strings.Contains(upstreamURL, "anthropic.com") {
+			req.Header.Set("x-api-key", apiKey)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+	default:
 		if !strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
 			baseURL += "/v1"
 		}

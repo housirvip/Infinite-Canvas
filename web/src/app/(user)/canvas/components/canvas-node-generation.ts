@@ -43,7 +43,7 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const referenceAudios = inputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
 
     return {
-        prompt: upstreamText ? `${prompt}\n\n${upstreamText}` : prompt,
+        prompt: upstreamText && !prompt.includes(upstreamText) ? `${prompt}\n\n${upstreamText}` : prompt,
         referenceImages,
         referenceVideos,
         referenceAudios,

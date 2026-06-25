@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
+import { Box, Download, Ellipsis, FolderPlus, Hash, Image as ImageIcon, Info, MapPin, MessageSquare, Minus, Move, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Type, Upload, Video } from "lucide-react";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Segmented } from "@/components/ui/segmented";
@@ -184,7 +184,7 @@ export function CanvasNodeHoverToolbar({
         <>
             <div
                 className="absolute z-[70] flex -translate-x-1/2 -translate-y-full flex-wrap items-center justify-center rounded-[14px] border border-black/10 bg-white px-1 py-1 text-[13px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
-                style={{ left, top, maxWidth: "min(580px, calc(100vw - 24px))" }}
+                style={{ left, top, maxWidth: "min(720px, calc(100vw - 24px))" }}
                 onMouseEnter={() => onKeep(node.id)}
                 onMouseLeave={() => {
                     if (!imageToolSettingsOpen) onLeave();
@@ -259,17 +259,43 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
                 {node ? (
                     <div className="h-[56vh] min-h-[360px] text-sm">
                         {view === "info" ? (
-                            <div className="thin-scrollbar h-full space-y-3 overflow-auto pr-1">
-                                <InfoRow label="ID" value={node.id} />
-                                <InfoRow label="类型" value={node.type === CanvasNodeType.Text ? "文本" : node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : node.type === CanvasNodeType.Audio ? "音频" : "生成配置"} />
-                                <InfoRow label="尺寸" value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
-                                <InfoRow label="位置" value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
-                                <InfoRow label="状态" value={node.metadata?.status || "idle"} />
-                                {batchCount > 1 ? <InfoRow label="图片组" value={`${batchCount} 张`} /> : null}
-                                {node.metadata?.prompt ? <InfoRow label="提示词" value={node.metadata.prompt} /> : null}
-                                {imageBytes ? <InfoRow label="图片大小" value={formatBytes(imageBytes)} /> : null}
+                            <div className="thin-scrollbar h-full space-y-2 overflow-auto pr-1">
+                                <InfoCard icon={<Hash className="size-3.5" />} label="ID" mono>
+                                    {node.id}
+                                </InfoCard>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <InfoCard icon={<Box className="size-3.5" />} label="类型">
+                                        {node.type === CanvasNodeType.Text ? "文本" : node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : node.type === CanvasNodeType.Audio ? "音频" : "生成配置"}
+                                    </InfoCard>
+                                    <InfoCard icon={<Move className="size-3.5" />} label="尺寸">
+                                        {Math.round(node.width)} × {Math.round(node.height)}
+                                    </InfoCard>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <InfoCard icon={<MapPin className="size-3.5" />} label="位置">
+                                        {Math.round(node.position.x)}, {Math.round(node.position.y)}
+                                    </InfoCard>
+                                    <InfoCard icon={<Info className="size-3.5" />} label="状态">
+                                        <StatusBadge status={node.metadata?.status || "idle"} />
+                                    </InfoCard>
+                                </div>
+                                {batchCount > 1 ? (
+                                    <InfoCard icon={<ImageIcon className="size-3.5" />} label="图片组">
+                                        {batchCount} 张
+                                    </InfoCard>
+                                ) : null}
+                                {imageBytes ? (
+                                    <InfoCard icon={<Download className="size-3.5" />} label="图片大小">
+                                        {formatBytes(imageBytes)}
+                                    </InfoCard>
+                                ) : null}
+                                {node.metadata?.prompt ? (
+                                    <InfoCard icon={<Type className="size-3.5" />} label="提示词">
+                                        <span className="line-clamp-4">{node.metadata.prompt}</span>
+                                    </InfoCard>
+                                ) : null}
                                 {node.metadata?.errorDetails ? (
-                                    <div className="rounded-lg border p-3 text-red-400" style={{ borderColor: theme.node.stroke }}>
+                                    <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-400">
                                         {node.metadata.errorDetails}
                                     </div>
                                 ) : null}
@@ -303,11 +329,32 @@ function ToolbarAction({ title, label, icon, onClick, showLabel, active = false,
     );
 }
 
-function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+function InfoCard({ icon, label, mono, children }: { icon: ReactNode; label: string; mono?: boolean; children: ReactNode }) {
     return (
-        <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
-            <span className="opacity-50">{label}</span>
-            <span className="min-w-0 whitespace-pre-wrap break-words">{value}</span>
+        <div className="rounded-lg border border-border/60 bg-muted/40 px-3 py-2.5">
+            <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                {icon}
+                {label}
+            </div>
+            <div className={`text-sm font-medium ${mono ? "font-mono text-xs break-all" : ""}`}>
+                {children}
+            </div>
         </div>
+    );
+}
+
+function StatusBadge({ status }: { status: string }) {
+    const config: Record<string, { bg: string; text: string; dot: string }> = {
+        success: { bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
+        error: { bg: "bg-red-500/10", text: "text-red-600 dark:text-red-400", dot: "bg-red-500" },
+        loading: { bg: "bg-blue-500/10", text: "text-blue-600 dark:text-blue-400", dot: "bg-blue-500" },
+        idle: { bg: "bg-muted", text: "text-muted-foreground", dot: "bg-muted-foreground" },
+    };
+    const c = config[status] || config.idle;
+    return (
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${c.bg} ${c.text}`}>
+            <span className={`size-1.5 rounded-full ${c.dot}`} />
+            {status}
+        </span>
     );
 }

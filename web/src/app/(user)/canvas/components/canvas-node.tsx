@@ -384,6 +384,7 @@ function StreamingTextContent({ node, theme }: Pick<NodeContentRendererProps, "n
     return (
         <div className="flex h-full w-full flex-col overflow-hidden pt-8">
             <div
+                data-canvas-no-zoom
                 className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono"
                 style={{ fontSize: `${fontSize}px`, lineHeight: `${Math.round(fontSize * 1.65)}px`, color: theme.node.text }}
                 onWheel={(event) => event.stopPropagation()}
@@ -449,6 +450,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
             {isEditingContent ? (
                 <CanvasResourceMentionTextarea
                     ref={textareaRef}
+                    data-canvas-no-zoom
                     className="thin-scrollbar block h-full w-full resize-none overflow-y-auto whitespace-pre-wrap break-words border-none bg-transparent pl-4 pr-14 pt-0 pb-4 m-0 font-mono outline-none select-text appearance-none"
                     style={textStyle}
                     value={node.metadata?.content || ""}
@@ -465,6 +467,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                 />
             ) : (
                 <div
+                    data-canvas-no-zoom
                     className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words bg-transparent pl-4 pr-14 pt-0 pb-4 font-mono"
                     style={textStyle}
                     onWheel={(event) => event.stopPropagation()}

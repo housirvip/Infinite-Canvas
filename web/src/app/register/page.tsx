@@ -40,16 +40,22 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="flex h-dvh items-center justify-center bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]">
+        <div className="flex h-dvh items-center justify-center bg-background bg-dot-grid px-6">
             <div className="w-full max-w-sm">
                 <div className="mb-8 text-center">
-                    <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-xl border border-stone-200 bg-white text-xl font-bold shadow-sm dark:border-stone-800 dark:bg-stone-900">
-                        IC
+                    <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-xl border border-stone-200 bg-card shadow-sm dark:border-stone-800">
+                        <span
+                            className="size-7 shrink-0 bg-current"
+                            style={{
+                                mask: "url(/logo.svg) center / contain no-repeat",
+                                WebkitMask: "url(/logo.svg) center / contain no-repeat",
+                            }}
+                        />
                     </div>
                     <h1 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">注册</h1>
                     <p className="mt-1 text-sm text-stone-500">创建 Infinite Canvas 账号</p>
                 </div>
-                <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-sm dark:border-stone-800 dark:bg-stone-900">
+                <div className="rounded-xl border border-stone-200 bg-card p-6 shadow-sm dark:border-stone-800">
                     <form onSubmit={onSubmit} className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="username">用户名</Label>

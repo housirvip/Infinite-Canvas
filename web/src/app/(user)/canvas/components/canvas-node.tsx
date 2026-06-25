@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ChevronRight, Image as ImageIcon, Music2, RefreshCw, Star, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { TaskProgress } from "@/components/task-progress";
 import { formatBytes } from "@/lib/image-utils";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
@@ -342,7 +343,9 @@ function NodeContent(props: NodeContentRendererProps) {
         if (props.node.type === CanvasNodeType.Text && props.node.metadata?.content) {
             return <StreamingTextContent node={props.node} theme={props.theme} />;
         }
-        return <LoadingContent theme={props.theme} progressText={progressText} />;
+        const progress = typeof props.node.metadata?.progress === "number" ? props.node.metadata.progress : undefined;
+        const taskProvider = typeof props.node.metadata?.taskProvider === "string" ? props.node.metadata.taskProvider : undefined;
+        return <LoadingContent theme={props.theme} progressText={progressText} progress={progress} taskProvider={taskProvider} />;
     }
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} />;
 
@@ -359,11 +362,17 @@ const nodeContentRenderers = {
     [CanvasNodeType.RunningHub]: RunningHubNodeContent,
 } satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
 
-function LoadingContent({ theme, progressText }: Pick<NodeContentRendererProps, "theme"> & { progressText?: string }) {
+const POLLING_PROVIDERS = ["openai_video", "seedance", "runninghub"];
+
+function LoadingContent({ theme, progressText, progress, taskProvider }: Pick<NodeContentRendererProps, "theme"> & { progressText?: string; progress?: number; taskProvider?: string }) {
+    const isPolling = taskProvider && POLLING_PROVIDERS.includes(taskProvider);
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
-            <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
-            <span className="text-[10px] tracking-[0.2em]">{progressText || "生成中"}</span>
+            <TaskProgress
+                progress={isPolling ? progress : undefined}
+                progressText={progressText}
+                compact
+            />
         </div>
     );
 }

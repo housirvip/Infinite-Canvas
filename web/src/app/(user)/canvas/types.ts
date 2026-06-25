@@ -65,6 +65,9 @@ export type CanvasNodeMetadata = {
     runninghubLastError?: string;
     runninghubStatus?: string;
     runninghubParamValues?: Record<string, string>;
+    progressText?: string;
+    progress?: number;
+    taskProvider?: string;
 };
 
 export type CanvasNodeData = {

@@ -111,11 +111,13 @@ type TaskWaitResult = { files: Array<{ fileId: string; url: string; mimeType: st
 function submitTaskAndWait(
     submitFn: () => Promise<{ taskId: string }>,
     signal?: AbortSignal,
+    onTaskCreated?: (taskId: string) => void,
 ): Promise<TaskWaitResult> {
     return new Promise<TaskWaitResult>((resolve, reject) => {
         if (signal?.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
 
         submitFn().then((task) => {
+            onTaskCreated?.(task.taskId);
             const onAbort = () => { unsub(); reject(new DOMException("Aborted", "AbortError")); };
             signal?.addEventListener("abort", onAbort, { once: true });
             const unsub = backendWs.onTask(task.taskId, (msg) => {
@@ -494,7 +496,7 @@ function InfiniteCanvasPage() {
             if (msg.type === "task.status") {
                 setNodes((prev) =>
                     prev.map((n) =>
-                        n.id === entry.nodeId ? { ...n, metadata: { ...n.metadata, progressText: msg.progressText, status: "loading" } } : n,
+                        n.id === entry.nodeId ? { ...n, metadata: { ...n.metadata, progressText: msg.progressText, progress: msg.progress, taskProvider: entry.type, status: "loading" } } : n,
                     ),
                 );
             }
@@ -518,6 +520,8 @@ function InfiniteCanvasPage() {
                                       bytes: file.size,
                                       status: "success" as const,
                                       progressText: undefined,
+                                      progress: undefined,
+                                      taskProvider: undefined,
                                   },
                               }
                             : n,
@@ -530,7 +534,7 @@ function InfiniteCanvasPage() {
                 setNodes((prev) =>
                     prev.map((n) =>
                         n.id === entry.nodeId
-                            ? { ...n, metadata: { ...n.metadata, status: "error" as const, errorDetails: msg.error, progressText: undefined } }
+                            ? { ...n, metadata: { ...n.metadata, status: "error" as const, errorDetails: msg.error, progressText: undefined, progress: undefined, taskProvider: undefined } }
                             : n,
                     ),
                 );
@@ -1863,6 +1867,7 @@ function InfiniteCanvasPage() {
                 const result = await submitTaskAndWait(
                     () => submitImageEdit({ channelId, model: modelName, prompt, n: 1, quality: generationConfig.quality, size: generationConfig.size, refFileIds, maskFileId }),
                     controller.signal,
+                    (taskId) => taskNodeMapRef.current.set(taskId, { nodeId: childId, type: "openai_image" }),
                 );
                 const file = result.files[0];
                 if (!file) throw new Error("未返回生成结果");
@@ -1948,6 +1953,7 @@ function InfiniteCanvasPage() {
                 const result = await submitTaskAndWait(
                     () => submitImageEdit({ channelId, model: modelName, prompt, n: 1, quality: generationConfig.quality, size: generationConfig.size, refFileIds }),
                     controller.signal,
+                    (taskId) => taskNodeMapRef.current.set(taskId, { nodeId: childId, type: "openai_image" }),
                 );
                 const file = result.files[0];
                 if (!file) throw new Error("未返回生成结果");
@@ -2238,6 +2244,7 @@ function InfiniteCanvasPage() {
                                         ? submitImageEdit({ channelId, model: modelName, prompt: effectivePrompt, n: 1, quality: generationConfig.quality, size: generationConfig.size, refFileIds })
                                         : submitImageGeneration({ channelId, model: modelName, prompt: effectivePrompt, n: 1, quality: generationConfig.quality, size: generationConfig.size }),
                                     controller.signal,
+                                    (taskId) => taskNodeMapRef.current.set(taskId, { nodeId: targetId, type: "openai_image" }),
                                 );
                                 const file = result.files[0];
                                 if (!file) throw new Error("未返回生成结果");
@@ -2327,6 +2334,7 @@ function InfiniteCanvasPage() {
                         const result = await submitTaskAndWait(
                             () => submitVideoGeneration({ channelId, model: modelName, prompt: effectivePrompt, refFileIds: refFileIds.length ? refFileIds : undefined, seconds: Number(generationConfig.videoSeconds) || 6, quality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio === "true", watermark: generationConfig.videoWatermark === "true" }),
                             controller.signal,
+                            (taskId) => taskNodeMapRef.current.set(taskId, { nodeId: videoId, type: "openai_video" }),
                         );
                         const file = result.files[0];
                         if (!file) throw new Error("未返回生成结果");
@@ -2364,6 +2372,7 @@ function InfiniteCanvasPage() {
                         const result = await submitTaskAndWait(
                             () => submitAudioGeneration({ channelId, model: modelName, prompt: effectivePrompt, voice: generationConfig.audioVoice, format: generationConfig.audioFormat, speed: Number(generationConfig.audioSpeed) || 1, instructions: generationConfig.audioInstructions }),
                             controller.signal,
+                            (taskId) => taskNodeMapRef.current.set(taskId, { nodeId: audioId, type: "audio" }),
                         );
                         const file = result.files[0];
                         if (!file) throw new Error("未返回生成结果");
@@ -2527,6 +2536,7 @@ function InfiniteCanvasPage() {
                 const result = await submitTaskAndWait(
                     () => submitRunningHubTask({ workflowId: workflow.workflowId, nodeInfoList, mediaFileIds }),
                     abortController.signal,
+                    (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "runninghub" }),
                 );
                 const rhResults = result.files.map((f) => ({
                     type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
@@ -2568,6 +2578,7 @@ function InfiniteCanvasPage() {
                 const result = await submitTaskAndWait(
                     () => submitRunningHubTask({ workflowId: taskId }),
                     abortController.signal,
+                    (tid) => taskNodeMapRef.current.set(tid, { nodeId, type: "runninghub" }),
                 );
                 const rhResults = result.files.map((f) => ({
                     type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
@@ -2709,6 +2720,7 @@ function InfiniteCanvasPage() {
                     const result = await submitTaskAndWait(
                         () => submitVideoGeneration({ channelId, model: modelName, prompt, refFileIds: refFileIds.length ? refFileIds : undefined, seconds: Number(generationConfig.videoSeconds) || 6, quality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio === "true", watermark: generationConfig.videoWatermark === "true" }),
                         controller.signal,
+                        (taskId) => taskNodeMapRef.current.set(taskId, { nodeId: node.id, type: "openai_video" }),
                     );
                     const file = result.files[0];
                     if (!file) throw new Error("未返回生成结果");
@@ -2724,6 +2736,7 @@ function InfiniteCanvasPage() {
                     const result = await submitTaskAndWait(
                         () => submitAudioGeneration({ channelId, model: modelName, prompt, voice: generationConfig.audioVoice, format: generationConfig.audioFormat, speed: Number(generationConfig.audioSpeed) || 1, instructions: generationConfig.audioInstructions }),
                         controller.signal,
+                        (taskId) => taskNodeMapRef.current.set(taskId, { nodeId: node.id, type: "audio" }),
                     );
                     const file = result.files[0];
                     if (!file) throw new Error("未返回生成结果");
@@ -2741,6 +2754,7 @@ function InfiniteCanvasPage() {
                         ? submitImageEdit({ channelId, model: modelName, prompt, n: 1, quality: generationConfig.quality, size: generationConfig.size, refFileIds })
                         : submitImageGeneration({ channelId, model: modelName, prompt, n: 1, quality: generationConfig.quality, size: generationConfig.size }),
                     controller.signal,
+                    (taskId) => taskNodeMapRef.current.set(taskId, { nodeId: node.id, type: "openai_image" }),
                 );
                 const imgFile = imgResult.files[0];
                 if (!imgFile) throw new Error("未返回生成结果");

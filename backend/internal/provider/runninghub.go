@@ -17,7 +17,7 @@ import (
 	"github.com/infinite-canvas/backend/internal/storage"
 )
 
-const runninghubBaseURL = "https://www.runninghub.cn"
+const defaultRunningHubBaseURL = "https://www.runninghub.cn"
 
 type RunningHubProvider struct {
 	pollMs   int
@@ -49,8 +49,12 @@ type runninghubParams struct {
 	MediaFileIDs map[string]string `json:"mediaFileIds,omitempty"`
 }
 
-func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiKey string, _ string,
+func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiKey string, baseURL string,
 	fileStore storage.FileStorage, onProgress ProgressFunc) (*ExecuteResult, error) {
+
+	if baseURL == "" {
+		baseURL = defaultRunningHubBaseURL
+	}
 
 	var params runninghubParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
@@ -77,7 +81,7 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 			return nil, fmt.Errorf("failed to load media file %s: %w", fileID, err)
 		}
 
-		uploadURL, err := p.uploadMedia(ctx, apiKey, data)
+		uploadURL, err := p.uploadMedia(ctx, apiKey, baseURL, data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to upload media: %w", err)
 		}
@@ -92,7 +96,7 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 
 	onProgress(15, "提交工作流任务...")
 
-	taskID, err := p.submitTask(ctx, apiKey, params.WorkflowID, params.NodeInfoList, params.InstanceType)
+	taskID, err := p.submitTask(ctx, apiKey, baseURL, params.WorkflowID, params.NodeInfoList, params.InstanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +105,7 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 
 	onProgress(20, "等待执行...")
 
-	results, err := p.pollTask(ctx, apiKey, taskID, timeout, onProgress)
+	results, err := p.pollTask(ctx, apiKey, baseURL, taskID, timeout, onProgress)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +147,7 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 	return execResult, nil
 }
 
-func (p *RunningHubProvider) uploadMedia(ctx context.Context, apiKey string, data []byte) (string, error) {
+func (p *RunningHubProvider) uploadMedia(ctx context.Context, apiKey string, baseURL string, data []byte) (string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	part, err := w.CreateFormFile("file", "upload.bin")
@@ -154,7 +158,7 @@ func (p *RunningHubProvider) uploadMedia(ctx context.Context, apiKey string, dat
 	w.Close()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		runninghubBaseURL+"/openapi/v2/media/upload/binary", &buf)
+		baseURL+"/openapi/v2/media/upload/binary", &buf)
 	if err != nil {
 		return "", err
 	}
@@ -187,14 +191,14 @@ func (p *RunningHubProvider) uploadMedia(ctx context.Context, apiKey string, dat
 	return result.Data.DownloadURL, nil
 }
 
-func (p *RunningHubProvider) submitTask(ctx context.Context, apiKey, workflowID string, nodeInfoList any, instanceType string) (string, error) {
+func (p *RunningHubProvider) submitTask(ctx context.Context, apiKey, baseURL, workflowID string, nodeInfoList any, instanceType string) (string, error) {
 	body := map[string]any{
 		"nodeInfoList": nodeInfoList,
 		"instanceType": instanceType,
 	}
 
 	jsonData, _ := json.Marshal(body)
-	url := fmt.Sprintf("%s/openapi/v2/run/ai-app/%s", runninghubBaseURL, workflowID)
+	url := fmt.Sprintf("%s/openapi/v2/run/ai-app/%s", baseURL, workflowID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
 	if err != nil {
@@ -235,7 +239,7 @@ type rhResult struct {
 	Text       string `json:"text"`
 }
 
-func (p *RunningHubProvider) pollTask(ctx context.Context, apiKey, taskID string, timeoutS int,
+func (p *RunningHubProvider) pollTask(ctx context.Context, apiKey, baseURL, taskID string, timeoutS int,
 	onProgress ProgressFunc) ([]rhResult, error) {
 
 	maxAttempts := (timeoutS * 1000) / p.pollMs
@@ -261,7 +265,7 @@ func (p *RunningHubProvider) pollTask(ctx context.Context, apiKey, taskID string
 
 		body, _ := json.Marshal(map[string]string{"taskId": taskID})
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost,
-			runninghubBaseURL+"/openapi/v2/query", bytes.NewReader(body))
+			baseURL+"/openapi/v2/query", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -305,13 +309,16 @@ func isVideoOutput(t string) bool {
 	return t == "mp4" || t == "mov" || t == "avi" || t == "webm"
 }
 
-func (p *RunningHubProvider) CancelUpstreamTask(apiKey, upstreamTaskID string) error {
+func (p *RunningHubProvider) CancelUpstreamTask(apiKey, baseURL, upstreamTaskID string) error {
+	if baseURL == "" {
+		baseURL = defaultRunningHubBaseURL
+	}
 	body, _ := json.Marshal(map[string]string{
 		"apiKey": apiKey,
 		"taskId": upstreamTaskID,
 	})
 	req, err := http.NewRequest(http.MethodPost,
-		runninghubBaseURL+"/task/openapi/cancel", bytes.NewReader(body))
+		baseURL+"/task/openapi/cancel", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

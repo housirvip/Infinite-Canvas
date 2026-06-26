@@ -104,13 +104,13 @@ func (s *Scheduler) Cancel(taskID string) error {
 
 	if task.Provider == "runninghub" && task.UpstreamTaskID != "" {
 		go func() {
-			apiKey, _, err := s.resolveChannel(&task)
+			apiKey, baseURL, err := s.resolveChannel(&task)
 			if err != nil {
 				log.Printf("scheduler: cancel upstream: resolve channel failed: %v", err)
 				return
 			}
 			if rh, ok := s.providers["runninghub"].(*provider.RunningHubProvider); ok {
-				if err := rh.CancelUpstreamTask(apiKey, task.UpstreamTaskID); err != nil {
+				if err := rh.CancelUpstreamTask(apiKey, baseURL, task.UpstreamTaskID); err != nil {
 					log.Printf("scheduler: cancel upstream task %s failed: %v", task.UpstreamTaskID, err)
 				}
 			}
@@ -339,7 +339,7 @@ func (s *Scheduler) resolveChannel(task *model.Task) (apiKey, baseURL string, er
 			return "", "", fmt.Errorf("no RunningHub API key configured")
 		}
 
-		return key, "", nil
+		return key, config.BaseURL, nil
 	}
 
 	var channel model.ApiChannel

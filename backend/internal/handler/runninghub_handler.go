@@ -44,11 +44,13 @@ type RunningHubWorkflowPayload struct {
 
 type UpdateRunningHubConfigRequest struct {
 	APIKey    *string                      `json:"apiKey"`
+	BaseURL   *string                      `json:"baseUrl"`
 	Workflows *[]RunningHubWorkflowPayload `json:"workflows"`
 }
 
 type RunningHubConfigResponse struct {
 	HasAPIKey bool                        `json:"hasApiKey"`
+	BaseURL   string                      `json:"baseUrl"`
 	Workflows []RunningHubWorkflowPayload `json:"workflows"`
 	UpdatedAt string                      `json:"updatedAt,omitempty"`
 }
@@ -89,6 +91,11 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
+	if req.BaseURL != nil && !isValidRunningHubBaseURL(*req.BaseURL) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid RunningHub base URL"})
+		return
+	}
+
 	var config model.RunningHubConfig
 	result := h.db.Where("user_id = ?", userID).First(&config)
 	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -96,7 +103,7 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
-	if req.APIKey == nil && req.Workflows == nil {
+	if req.APIKey == nil && req.BaseURL == nil && req.Workflows == nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusOK, gin.H{"config": defaultRunningHubConfigResponse()})
 			return
@@ -135,6 +142,10 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 			config.Workflows = string(workflowsJSON)
 		}
 
+		if req.BaseURL != nil {
+			config.BaseURL = *req.BaseURL
+		}
+
 		if err := h.db.Create(&config).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save RunningHub config"})
 			return
@@ -163,6 +174,10 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 				return
 			}
 			updates["workflows"] = string(workflowsJSON)
+		}
+
+		if req.BaseURL != nil {
+			updates["base_url"] = *req.BaseURL
 		}
 
 		if len(updates) > 0 {
@@ -196,6 +211,7 @@ func defaultRunningHubConfigResponse() RunningHubConfigResponse {
 func buildRunningHubConfigResponse(config *model.RunningHubConfig) (RunningHubConfigResponse, error) {
 	resp := RunningHubConfigResponse{
 		HasAPIKey: config.EncryptedAPIKey != "",
+		BaseURL:   config.BaseURL,
 		Workflows: []RunningHubWorkflowPayload{},
 	}
 
@@ -257,6 +273,15 @@ func isValidRunningHubInstanceType(instanceType string) bool {
 func isValidRunningHubParamRole(role string) bool {
 	switch role {
 	case "prompt", "image", "video", "boolean", "number", "string", "fixed", "ignore":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidRunningHubBaseURL(baseURL string) bool {
+	switch baseURL {
+	case "", "https://www.runninghub.cn", "https://www.runninghub.ai":
 		return true
 	default:
 		return false

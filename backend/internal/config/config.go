@@ -144,6 +144,8 @@ func defaultConfig() *Config {
 				"openai_video": 3,
 				"seedance":     3,
 				"runninghub":   3,
+				"comfyui":      3,
+				"runninghub_comfyui": 3,
 				"audio":        5,
 			},
 			QueueSize: 100,
@@ -151,6 +153,8 @@ func defaultConfig() *Config {
 				"openai_video": {PollMs: 2500, TimeoutS: 300},
 				"seedance":     {PollMs: 5000, TimeoutS: 600},
 				"runninghub":   {PollMs: 4000, TimeoutS: 600},
+				"comfyui":      {PollMs: 2000, TimeoutS: 600},
+				"runninghub_comfyui": {PollMs: 4000, TimeoutS: 600},
 			},
 		},
 		Log: LogConfig{

@@ -50,6 +50,8 @@ func New(db *gorm.DB, hub *ws.Hub, fileStore storage.FileStorage,
 		provider.NewOpenAIVideoProvider(cfg.Providers["openai_video"].PollMs, cfg.Providers["openai_video"].TimeoutS),
 		provider.NewSeedanceVideoProvider(cfg.Providers["seedance"].PollMs, cfg.Providers["seedance"].TimeoutS),
 		provider.NewRunningHubProvider(cfg.Providers["runninghub"].PollMs, cfg.Providers["runninghub"].TimeoutS),
+		provider.NewComfyUIProvider(cfg.Providers["comfyui"].PollMs, cfg.Providers["comfyui"].TimeoutS),
+		provider.NewRunningHubComfyUIProvider(cfg.Providers["runninghub_comfyui"].PollMs, cfg.Providers["runninghub_comfyui"].TimeoutS),
 		provider.NewAudioProvider(),
 	}
 
@@ -325,7 +327,7 @@ func (s *Scheduler) failTask(task *model.Task, errMsg string) {
 }
 
 func (s *Scheduler) resolveChannel(task *model.Task) (apiKey, baseURL string, err error) {
-	if task.Provider == "runninghub" {
+	if task.Provider == "runninghub" || task.Provider == "runninghub_comfyui" {
 		var config model.RunningHubConfig
 		if err := s.db.Where("user_id = ?", task.UserID).First(&config).Error; err != nil {
 			return "", "", fmt.Errorf("no RunningHub API key configured")
@@ -340,6 +342,23 @@ func (s *Scheduler) resolveChannel(task *model.Task) (apiKey, baseURL string, er
 		}
 
 		return key, config.BaseURL, nil
+	}
+
+	if task.Provider == "comfyui" {
+		var config model.ComfyUIConfig
+		if err := s.db.Where("user_id = ?", task.UserID).First(&config).Error; err != nil {
+			return "", "", fmt.Errorf("no ComfyUI server configured")
+		}
+		if config.ServerURL == "" {
+			return "", "", fmt.Errorf("no ComfyUI server URL configured")
+		}
+
+		var key string
+		if config.EncryptedAPIKey != "" {
+			key, _ = s.aesCrypto.Decrypt(config.EncryptedAPIKey)
+		}
+
+		return key, config.ServerURL, nil
 	}
 
 	var channel model.ApiChannel

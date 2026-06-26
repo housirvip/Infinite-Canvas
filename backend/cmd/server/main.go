@@ -99,6 +99,12 @@ func main() {
 	runningHubGroup.GET("/config", runningHubHandler.GetConfig)
 	runningHubGroup.PUT("/config", runningHubHandler.UpdateConfig)
 
+	// ComfyUI
+	comfyUIHandler := handler.NewComfyUIHandler(db, aesCrypto)
+	comfyUIGroup := api.Group("/comfyui", middleware.AuthRequired(jwtMgr))
+	comfyUIGroup.GET("/config", comfyUIHandler.GetConfig)
+	comfyUIGroup.PUT("/config", comfyUIHandler.UpdateConfig)
+
 	// Files
 	fileHandler := handler.NewFileHandler(fileStore, cfg.Storage.MaxFileSizeMB)
 	fileGroup := api.Group("/files")

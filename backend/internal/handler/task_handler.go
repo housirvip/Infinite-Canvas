@@ -138,6 +138,10 @@ func resolveProvider(taskType model.TaskType, modelName string) string {
 		return "audio"
 	case model.TaskTypeRunningHub:
 		return "runninghub"
+	case model.TaskTypeComfyUI:
+		return "comfyui"
+	case model.TaskTypeRunningHubComfyUI:
+		return "runninghub_comfyui"
 	default:
 		return "openai_image"
 	}

@@ -25,6 +25,8 @@ const (
 	TaskTypeVideoGeneration TaskType = "video_generation"
 	TaskTypeAudioGeneration TaskType = "audio_generation"
 	TaskTypeRunningHub      TaskType = "runninghub"
+	TaskTypeComfyUI         TaskType = "comfyui"
+	TaskTypeRunningHubComfyUI TaskType = "runninghub_comfyui"
 )
 
 type Task struct {

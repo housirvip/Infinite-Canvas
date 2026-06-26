@@ -13,7 +13,7 @@ import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { getImageBlob, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, getMediaBlob, type UploadedFile } from "@/services/file-storage";
 import { backendWs, type TaskResult } from "@/services/backend-ws";
-import { submitImageGeneration, submitImageEdit, submitVideoGeneration, submitAudioGeneration, submitRunningHubTask, fileUrl, uploadFile, getTask } from "@/services/backend-task";
+import { submitImageGeneration, submitImageEdit, submitVideoGeneration, submitAudioGeneration, submitRunningHubTask, fileUrl, uploadFile, getTask, cancelTask } from "@/services/backend-task";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -123,7 +123,7 @@ function submitTaskAndWait(
 
         submitFn().then((task) => {
             onTaskCreated?.(task.taskId);
-            const onAbort = () => { unsub(); reject(new DOMException("Aborted", "AbortError")); };
+            const onAbort = () => { unsub(); cancelTask(task.taskId).catch(() => {}); reject(new DOMException("Aborted", "AbortError")); };
             signal?.addEventListener("abort", onAbort, { once: true });
             const unsub = backendWs.onTask(task.taskId, (msg) => {
                 if (msg.type === "task.status") return;
@@ -424,6 +424,13 @@ function InfiniteCanvasPage() {
             affectedNodeIds.add(request.targetNodeId);
             affectedNodeIds.add(request.originNodeId);
         });
+
+        taskNodeMapRef.current.forEach((entry, taskId) => {
+            if (entry.nodeId === runningId || affectedNodeIds.has(entry.nodeId)) {
+                cancelTask(taskId).catch(() => {});
+            }
+        });
+
         setRunningNodeId((current) => (current === runningId ? null : current));
         if (!affectedNodeIds.size) return;
         setNodes((prev) =>
@@ -538,6 +545,17 @@ function InfiniteCanvasPage() {
                     prev.map((n) =>
                         n.id === entry.nodeId
                             ? { ...n, metadata: { ...n.metadata, status: "error" as const, errorDetails: msg.error, progressText: undefined, progress: undefined, taskProvider: undefined } }
+                            : n,
+                    ),
+                );
+            }
+
+            if (msg.type === "task.cancelled") {
+                taskNodeMapRef.current.delete(msg.taskId);
+                setNodes((prev) =>
+                    prev.map((n) =>
+                        n.id === entry.nodeId
+                            ? { ...n, metadata: { ...n.metadata, status: "idle" as const, progressText: undefined, progress: undefined, taskProvider: undefined } }
                             : n,
                     ),
                 );
@@ -3263,7 +3281,7 @@ function InfiniteCanvasPage() {
                         <p className="text-sm opacity-60">当前生成请求会被中断，已经生成完成的内容会保留。</p>
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setConfirmStopOpen(false)}>继续生成</Button>
-                            <Button variant="destructive" onClick={() => { stopGenerationByRunningId(confirmStopNodeIdRef.current!); setConfirmStopOpen(false); }}>停止</Button>
+                            <Button variant="destructive" onClick={() => { if (confirmStopNodeIdRef.current) stopGenerationByRunningId(confirmStopNodeIdRef.current); setConfirmStopOpen(false); }}>停止</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

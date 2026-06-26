@@ -217,7 +217,7 @@ export const useConfigStore = create<ConfigStore>()(
                             name: ch.name,
                             baseUrl: ch.baseUrl,
                             apiKey: "",
-                            apiFormat: (ch.apiFormat || "openai-response") as ApiCallFormat,
+                            apiFormat: (ch.apiFormat || "openai-completion") as ApiCallFormat,
                             models,
                         });
                     });

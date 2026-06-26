@@ -220,7 +220,8 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
         set((state) => ({
             projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
         }));
-        if (patch.nodes && prev && !hasNonTransientChanges(prev.nodes, patch.nodes)) return;
+        const patchKeys = Object.keys(patch).filter((k) => k !== "nodes");
+        if (patchKeys.length === 0 && patch.nodes && prev && !hasNonTransientChanges(prev.nodes, patch.nodes)) return;
         debouncedSave(id, buildProjectSavePatch(patch));
     },
 

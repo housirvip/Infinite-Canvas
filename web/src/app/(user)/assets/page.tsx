@@ -169,8 +169,8 @@ export default function AssetsPage() {
         const image = await uploadImage(file);
         const draft = { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
         setImageDraft(draft);
-        if (!formCoverUrl) setFormCoverUrl(draft.dataUrl);
-        if (!formTitle) setFormTitle(file.name);
+        setFormCoverUrl((prev) => prev || draft.dataUrl);
+        setFormTitle((prev) => prev || file.name);
     };
 
     const copyAssetText = async (asset: Asset) => {

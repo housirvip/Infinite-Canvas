@@ -21,9 +21,9 @@ export function CanvasImageViewer({ node, inputImageUrl, onClose }: CanvasImageV
 
     const imageUrl = node.metadata?.content || "";
 
-    const zoomIn = () => setScale((s) => Math.min(ZOOM_MAX, s + ZOOM_STEP));
-    const zoomOut = () => setScale((s) => Math.max(ZOOM_MIN, s - ZOOM_STEP));
-    const resetZoom = () => setScale(1);
+    const zoomIn = useCallback(() => setScale((s) => Math.min(ZOOM_MAX, s + ZOOM_STEP)), []);
+    const zoomOut = useCallback(() => setScale((s) => Math.max(ZOOM_MIN, s - ZOOM_STEP)), []);
+    const resetZoom = useCallback(() => setScale(1), []);
 
     const handleWheel = useCallback((e: WheelEvent) => {
         e.preventDefault();
@@ -49,7 +49,7 @@ export function CanvasImageViewer({ node, inputImageUrl, onClose }: CanvasImageV
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [onClose]);
+    }, [onClose, zoomIn, zoomOut, resetZoom]);
 
     const handleDownload = () => {
         const a = document.createElement("a");

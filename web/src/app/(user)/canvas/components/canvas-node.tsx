@@ -647,8 +647,10 @@ function ImageInfoBar({ node }: { node: CanvasNodeData }) {
             return;
         }
         if (!contentUrl) return;
+        let cancelled = false;
         const img = new window.Image();
         img.onload = () => {
+            if (cancelled) return;
             let bytes = node.metadata?.bytes || 0;
             if (!bytes && contentUrl.startsWith("data:")) {
                 const base64 = contentUrl.split(",")[1];
@@ -657,6 +659,7 @@ function ImageInfoBar({ node }: { node: CanvasNodeData }) {
             setMeasured({ w: img.naturalWidth, h: img.naturalHeight, bytes });
         };
         img.src = contentUrl;
+        return () => { cancelled = true; img.onload = null; };
     }, [contentUrl, node.metadata?.naturalWidth, node.metadata?.naturalHeight, node.metadata?.bytes]);
 
     if (!measured) return null;

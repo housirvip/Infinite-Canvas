@@ -97,6 +97,8 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 		return nil, err
 	}
 
+	task.UpstreamTaskID = taskID
+
 	onProgress(20, "等待执行...")
 
 	results, err := p.pollTask(ctx, apiKey, taskID, timeout, onProgress)
@@ -301,6 +303,27 @@ func isImageOutput(t string) bool {
 func isVideoOutput(t string) bool {
 	t = strings.ToLower(t)
 	return t == "mp4" || t == "mov" || t == "avi" || t == "webm"
+}
+
+func (p *RunningHubProvider) CancelUpstreamTask(apiKey, upstreamTaskID string) error {
+	body, _ := json.Marshal(map[string]string{
+		"apiKey": apiKey,
+		"taskId": upstreamTaskID,
+	})
+	req, err := http.NewRequest(http.MethodPost,
+		runninghubBaseURL+"/task/openapi/cancel", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 func mimeFromOutputType(t string) string {

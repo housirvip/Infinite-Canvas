@@ -81,11 +81,49 @@ func (s *Scheduler) Cancel(taskID string) error {
 	if cancel, ok := s.cancelMap.Load(taskID); ok {
 		cancel.(context.CancelFunc)()
 	}
-	return s.db.Model(&model.Task{}).Where("task_id = ?", taskID).
+
+	var task model.Task
+	if err := s.db.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+		return err
+	}
+
+	completedAt := time.Now()
+	if err := s.db.Model(&model.Task{}).Where("task_id = ?", taskID).
 		Updates(map[string]any{
 			"status":       model.TaskStatusCancelled,
-			"completed_at": time.Now(),
-		}).Error
+			"completed_at": completedAt,
+		}).Error; err != nil {
+		return err
+	}
+
+	s.hub.SendToUser(task.UserID, &ws.Message{
+		Type:   ws.MsgTypeTaskCancelled,
+		TaskID: taskID,
+		Status: string(model.TaskStatusCancelled),
+	})
+
+	if task.Provider == "runninghub" && task.UpstreamTaskID != "" {
+		go func() {
+			apiKey, _, err := s.resolveChannel(&task)
+			if err != nil {
+				log.Printf("scheduler: cancel upstream: resolve channel failed: %v", err)
+				return
+			}
+			if rh, ok := s.providers["runninghub"].(*provider.RunningHubProvider); ok {
+				if err := rh.CancelUpstreamTask(apiKey, task.UpstreamTaskID); err != nil {
+					log.Printf("scheduler: cancel upstream task %s failed: %v", task.UpstreamTaskID, err)
+				}
+			}
+		}()
+	}
+
+	var rtMs int64
+	if task.StartedAt != nil {
+		rtMs = completedAt.Sub(*task.StartedAt).Milliseconds()
+	}
+	s.writeAuditLog(&task, "task.cancelled", rtMs, nil)
+
+	return nil
 }
 
 func (s *Scheduler) CreateTask(userID uint, taskType model.TaskType, providerName string,
@@ -209,10 +247,14 @@ func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem ch
 	}
 
 	onProgress := func(progress int, text string) {
-		s.db.Model(task).Updates(map[string]any{
+		updates := map[string]any{
 			"progress":      progress,
 			"progress_text": text,
-		})
+		}
+		if task.UpstreamTaskID != "" {
+			updates["upstream_task_id"] = task.UpstreamTaskID
+		}
+		s.db.Model(task).Updates(updates)
 		s.hub.SendToUser(task.UserID, &ws.Message{
 			Type:         ws.MsgTypeTaskStatus,
 			TaskID:       task.TaskID,

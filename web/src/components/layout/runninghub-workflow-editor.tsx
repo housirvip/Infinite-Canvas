@@ -20,6 +20,7 @@ export function RunningHubConfigModal() {
     const setOpen = useRunningHubStore((state) => state.setOpen);
     const workflows = useRunningHubStore((state) => state.workflows);
     const hasApiKey = useRunningHubStore((state) => state.hasApiKey);
+    const baseUrl = useRunningHubStore((state) => state.baseUrl);
     const saveConfig = useRunningHubStore((state) => state.saveConfig);
     const setWorkflows = useRunningHubStore((state) => state.setWorkflows);
     const fetchConfigFromServer = useRunningHubStore((state) => state.fetchConfigFromServer);
@@ -155,6 +156,21 @@ export function RunningHubConfigModal() {
                                         保存 Key
                                     </Button>
                                 </div>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                                <Label>服务版本</Label>
+                                <Select
+                                    value={baseUrl || "https://www.runninghub.cn"}
+                                    onValueChange={(value) => void saveConfig({ baseUrl: value })}
+                                >
+                                    <SelectTrigger className="h-8 w-full text-sm">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="https://www.runninghub.cn">国内版 (runninghub.cn)</SelectItem>
+                                        <SelectItem value="https://www.runninghub.ai">国际版 (runninghub.ai)</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
                         </section>
 

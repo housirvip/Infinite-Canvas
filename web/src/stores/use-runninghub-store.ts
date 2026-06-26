@@ -6,18 +6,20 @@ import * as backendRunningHub from "@/services/backend-runninghub";
 type RunningHubStore = {
     workflows: RunningHubWorkflow[];
     hasApiKey: boolean;
+    baseUrl: string;
     isOpen: boolean;
     hydrated: boolean;
     setOpen: (isOpen: boolean) => void;
     openDialog: () => void;
     fetchConfigFromServer: () => Promise<void>;
-    saveConfig: (payload: { apiKey?: string; workflows?: RunningHubWorkflow[] }) => Promise<void>;
+    saveConfig: (payload: { apiKey?: string; baseUrl?: string; workflows?: RunningHubWorkflow[] }) => Promise<void>;
     setWorkflows: (workflows: RunningHubWorkflow[]) => void;
 };
 
 export const useRunningHubStore = create<RunningHubStore>()((set) => ({
     workflows: [],
     hasApiKey: false,
+    baseUrl: "",
     isOpen: false,
     hydrated: false,
 
@@ -26,14 +28,14 @@ export const useRunningHubStore = create<RunningHubStore>()((set) => ({
     fetchConfigFromServer: async () => {
         try {
             const config = await backendRunningHub.getRunningHubConfig();
-            set({ workflows: config.workflows, hasApiKey: config.hasApiKey, hydrated: true });
+            set({ workflows: config.workflows, hasApiKey: config.hasApiKey, baseUrl: config.baseUrl || "", hydrated: true });
         } catch {
             set({ hydrated: true });
         }
     },
     saveConfig: async (payload) => {
         const config = await backendRunningHub.updateRunningHubConfig(payload);
-        set({ workflows: config.workflows, hasApiKey: config.hasApiKey });
+        set({ workflows: config.workflows, hasApiKey: config.hasApiKey, baseUrl: config.baseUrl || "" });
     },
     setWorkflows: (workflows) => set({ workflows }),
 }));

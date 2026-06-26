@@ -3,12 +3,14 @@ import type { RunningHubWorkflow } from "@/lib/runninghub";
 
 export type RunningHubConfigResponse = {
     hasApiKey: boolean;
+    baseUrl: string;
     workflows: RunningHubWorkflow[];
     updatedAt?: string;
 };
 
 export type UpdateRunningHubConfigPayload = {
     apiKey?: string;
+    baseUrl?: string;
     workflows?: RunningHubWorkflow[];
 };
 

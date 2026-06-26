@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -73,7 +74,7 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		if baseURL == "" {
 			baseURL = "https://generativelanguage.googleapis.com"
 		}
-		upstreamURL = fmt.Sprintf("%s/v1beta/models/%s:streamGenerateContent?alt=sse", baseURL, modelName)
+		upstreamURL = fmt.Sprintf("%s/v1beta/models/%s:streamGenerateContent?alt=sse", strings.TrimRight(baseURL, "/"), url.PathEscape(modelName))
 	case "anthropic":
 		baseURL := channel.BaseURL
 		if baseURL == "" {
@@ -100,18 +101,14 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		upstreamReq.Header.Set("x-goog-api-key", apiKey)
 	case "anthropic":
 		upstreamReq.Header.Set("anthropic-version", "2023-06-01")
-		if strings.Contains(upstreamURL, "anthropic.com") {
-			upstreamReq.Header.Set("x-api-key", apiKey)
-		} else {
-			upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
-		}
+		upstreamReq.Header.Set("x-api-key", apiKey)
 	default:
 		upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
 	resp, err := http.DefaultClient.Do(upstreamReq)
 	if err != nil {
-		h.recordChatAudit(userID, modelName, &channel, apiFormat, http.StatusBadGateway, startTime, c.ClientIP())
+		h.recordChatAudit(userID, modelName, &channel, apiFormat, http.StatusBadGateway, time.Since(startTime), c.ClientIP())
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream request failed"})
 		return
 	}
@@ -123,6 +120,7 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 	c.Writer.WriteHeader(resp.StatusCode)
 	c.Writer.Flush()
 
+	ttfb := time.Since(startTime)
 	buf := make([]byte, 4096)
 	for {
 		n, readErr := resp.Body.Read(buf)
@@ -135,10 +133,10 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		}
 	}
 
-	h.recordChatAudit(userID, modelName, &channel, apiFormat, resp.StatusCode, startTime, c.ClientIP())
+	h.recordChatAudit(userID, modelName, &channel, apiFormat, resp.StatusCode, ttfb, c.ClientIP())
 }
 
-func (h *ChatHandler) recordChatAudit(userID uint, modelName string, channel *model.ApiChannel, apiFormat string, statusCode int, startTime time.Time, ip string) {
+func (h *ChatHandler) recordChatAudit(userID uint, modelName string, channel *model.ApiChannel, apiFormat string, statusCode int, ttfb time.Duration, ip string) {
 	writeAuditLog(h.db, &model.AuditLog{
 		UserID:         userID,
 		Action:         "chat_stream",
@@ -148,7 +146,7 @@ func (h *ChatHandler) recordChatAudit(userID uint, modelName string, channel *mo
 		ChannelName:    channel.Name,
 		APIFormat:      apiFormat,
 		StatusCode:     statusCode,
-		ResponseTimeMs: time.Since(startTime).Milliseconds(),
+		ResponseTimeMs: ttfb.Milliseconds(),
 		IP:             ip,
 	})
 }

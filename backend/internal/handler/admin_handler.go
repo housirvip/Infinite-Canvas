@@ -78,6 +78,10 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 
 	updates := map[string]any{}
 	if req.Role != nil {
+		if *req.Role != "user" && *req.Role != "admin" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "role must be 'user' or 'admin'"})
+			return
+		}
 		updates["role"] = *req.Role
 	}
 	if req.MaxConcurrency != nil {

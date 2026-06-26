@@ -4,7 +4,7 @@ import "time"
 
 type AuditLog struct {
 	ID             uint      `gorm:"primaryKey" json:"id"`
-	UserID         uint      `gorm:"index;not null" json:"userId"`
+	UserID         uint      `gorm:"index" json:"userId"`
 	Username       string    `gorm:"size:64" json:"username"`
 	Action         string    `gorm:"size:64;not null;index" json:"action"`
 	Resource       string    `gorm:"size:64" json:"resource"`

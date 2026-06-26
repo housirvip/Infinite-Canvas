@@ -265,6 +265,7 @@ func (h *ChannelHandler) ListModels(c *gin.Context) {
 
 	var upstreamURL string
 	var req *http.Request
+	var reqErr error
 
 	baseURL := strings.TrimRight(channel.BaseURL, "/")
 	switch apiFormat {
@@ -273,26 +274,34 @@ func (h *ChannelHandler) ListModels(c *gin.Context) {
 			baseURL += "/v1beta"
 		}
 		upstreamURL = baseURL + "/models"
-		req, _ = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		req, reqErr = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		if reqErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upstream URL"})
+			return
+		}
 		req.Header.Set("x-goog-api-key", apiKey)
 	case "anthropic":
 		if baseURL == "" {
 			baseURL = "https://api.anthropic.com"
 		}
 		upstreamURL = baseURL + "/v1/models"
-		req, _ = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
-		req.Header.Set("anthropic-version", "2023-06-01")
-		if strings.Contains(upstreamURL, "anthropic.com") {
-			req.Header.Set("x-api-key", apiKey)
-		} else {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
+		req, reqErr = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		if reqErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upstream URL"})
+			return
 		}
+		req.Header.Set("anthropic-version", "2023-06-01")
+		req.Header.Set("x-api-key", apiKey)
 	default:
 		if !strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
 			baseURL += "/v1"
 		}
 		upstreamURL = baseURL + "/models"
-		req, _ = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		req, reqErr = http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+		if reqErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upstream URL"})
+			return
+		}
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 

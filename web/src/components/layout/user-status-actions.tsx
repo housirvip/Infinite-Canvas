@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useRunningHubStore } from "@/stores/use-runninghub-store";
+import { useComfyUIStore } from "@/stores/use-comfyui-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 type UserStatusActionsProps = {
@@ -59,6 +60,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const theme = useThemeStore((state) => state.theme);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const openRunningHubDialog = useRunningHubStore((state) => state.openDialog);
+    const openComfyUIDialog = useComfyUIStore((state) => state.openDialog);
     const canvasTheme = canvasThemes[theme];
     const [hovered, setHovered] = useState<string | null>(null);
 
@@ -79,6 +81,9 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             ) : null}
             <StatusButton label="RunningHub" hovered={hovered} onHover={setHovered} style={baseStyle} hoverStyle={hoverStyle} onClick={openRunningHubDialog}>
                 <span className="text-xs font-bold leading-none" aria-hidden="true">RH</span>
+            </StatusButton>
+            <StatusButton label="ComfyUI" hovered={hovered} onHover={setHovered} style={baseStyle} hoverStyle={hoverStyle} onClick={openComfyUIDialog}>
+                <span className="text-[11px] font-bold leading-none" aria-hidden="true">CU</span>
             </StatusButton>
             <Tooltip>
                 <ThemePicker>

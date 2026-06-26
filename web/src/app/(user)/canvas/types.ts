@@ -16,6 +16,7 @@ export enum CanvasNodeType {
     Video = "video",
     Audio = "audio",
     RunningHub = "runninghub",
+    ComfyUI = "comfyui",
 }
 
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
@@ -57,14 +58,25 @@ export type CanvasNodeMetadata = {
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
-    // RunningHub
-    runninghubWorkflowId?: string;
-    runninghubTaskId?: string;
-    runninghubInstanceType?: "default" | "plus";
-    runninghubTimeout?: number;
-    runninghubLastError?: string;
-    runninghubStatus?: string;
-    runninghubParamValues?: Record<string, string>;
+    // RunningHub (unified: App + ComfyUI modes)
+    rhMode?: "app" | "comfyui";
+    rhWorkflowId?: string;
+    rhPresetId?: string;
+    rhWorkflowSource?: "preset" | "upstream";
+    rhInstanceType?: "default" | "plus";
+    rhTimeout?: number;
+    rhLastError?: string;
+    rhStatus?: string;
+    rhTaskId?: string;
+    rhParamValues?: Record<string, string>;
+    // ComfyUI (self-hosted)
+    comfyuiWorkflowSource?: "upstream" | "preset";
+    comfyuiPresetId?: string;
+    comfyuiWorkflowJson?: string;
+    comfyuiPromptId?: string;
+    comfyuiTimeout?: number;
+    comfyuiLastError?: string;
+    comfyuiParamValues?: Record<string, string>;
     progressText?: string;
     progress?: number;
     taskProvider?: string;

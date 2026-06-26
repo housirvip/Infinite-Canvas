@@ -10,10 +10,12 @@ import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/vide
 import { DOCS_URL } from "@/constant/env";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useRunningHubStore } from "@/stores/use-runninghub-store";
+import { useComfyUIStore } from "@/stores/use-comfyui-store";
+import { comfyuiParamKey, buildComfyUIWorkflowWithParams, prepareWorkflowForExecution } from "@/lib/comfyui";
 import { getImageBlob, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, getMediaBlob, type UploadedFile } from "@/services/file-storage";
 import { backendWs, type TaskResult } from "@/services/backend-ws";
-import { submitImageGeneration, submitImageEdit, submitVideoGeneration, submitAudioGeneration, submitRunningHubTask, fileUrl, uploadFile, getTask, cancelTask } from "@/services/backend-task";
+import { submitImageGeneration, submitImageEdit, submitVideoGeneration, submitAudioGeneration, submitRunningHubTask, submitComfyUITask, submitRunningHubComfyUITask, fileUrl, uploadFile, getTask, cancelTask } from "@/services/backend-task";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -46,6 +48,7 @@ import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
 import { CanvasRunningHubPanel } from "../components/canvas-runninghub-panel";
+import { CanvasComfyUIPanel } from "../components/canvas-comfyui-panel";
 import { buildNodeInfoList, paramKey, type RunningHubParamValues } from "@/lib/runninghub";
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "../components/asset-picker-modal";
@@ -220,7 +223,7 @@ function CanvasRefreshShell() {
     );
 }
 
-function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: PendingConnectionCreate; onCreate: (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.RunningHub) => void; onClose: () => void }) {
+function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: PendingConnectionCreate; onCreate: (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.RunningHub | CanvasNodeType.ComfyUI) => void; onClose: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     return (
         <div
@@ -245,6 +248,7 @@ function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: Pending
                 <ConnectionCreateOption theme={theme} icon={<Music2 className="size-5" />} title="音频参考" onClick={() => onCreate(CanvasNodeType.Audio)} />
                 <ConnectionCreateOption theme={theme} icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
                 <ConnectionCreateOption theme={theme} icon={<Workflow className="size-5" />} title="RunningHub" description="ComfyUI 云端工作流" onClick={() => onCreate(CanvasNodeType.RunningHub)} />
+                <ConnectionCreateOption theme={theme} icon={<Bot className="size-5" />} title="ComfyUI" description="本地 ComfyUI 工作流" onClick={() => onCreate(CanvasNodeType.ComfyUI)} />
             </div>
         </div>
     );
@@ -310,6 +314,9 @@ function InfiniteCanvasPage() {
     const runningHubWorkflows = useRunningHubStore((state) => state.workflows);
     const runningHubHasApiKey = useRunningHubStore((state) => state.hasApiKey);
     const openRunningHubDialog = useRunningHubStore((state) => state.openDialog);
+    const comfyuiPresets = useComfyUIStore((state) => state.presets);
+    const comfyuiServerUrl = useComfyUIStore((state) => state.serverUrl);
+    const openComfyUIDialog = useComfyUIStore((state) => state.openDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
     const hydrated = useCanvasStore((state) => state.hydrated);
@@ -726,7 +733,7 @@ function InfiniteCanvasPage() {
     );
 
     const createConnectedNode = useCallback(
-        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.RunningHub, pending: PendingConnectionCreate) => {
+        (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.RunningHub | CanvasNodeType.ComfyUI, pending: PendingConnectionCreate) => {
             const metadata = type === CanvasNodeType.Config ? { generationMode: "text" as const, model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) } : undefined;
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
@@ -2496,115 +2503,296 @@ function InfiniteCanvasPage() {
     }, [handleGenerateNode]);
 
     const handleRunningHubParamChange = useCallback((nodeId: string, key: string, value: string) => {
-        setNodes((prev) => prev.map((n) => (n.id !== nodeId ? n : { ...n, metadata: { ...n.metadata, runninghubParamValues: { ...(n.metadata?.runninghubParamValues || {}), [key]: value } } })));
+        setNodes((prev) => prev.map((n) => (n.id !== nodeId ? n : { ...n, metadata: { ...n.metadata, rhParamValues: { ...(n.metadata?.rhParamValues || {}), [key]: value } } })));
     }, []);
 
     const handleRunningHubExecute = useCallback(
         async (nodeId: string) => {
             const node = nodesRef.current.find((n) => n.id === nodeId);
             if (!node) return;
-            const workflow = runningHubWorkflows.find((w) => w.id === node.metadata?.runninghubWorkflowId);
-            if (!runningHubHasApiKey) {
-                message.warning("请先配置 RunningHub API Key");
-                openRunningHubDialog();
-                return;
-            }
-            if (!workflow) {
-                message.warning("请先配置 RunningHub 工作流");
-                openRunningHubDialog();
-                return;
-            }
+            const metadata = node.metadata || {};
+            const rhMode = metadata.rhMode || "app";
 
-            const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
-            setRunningNodeId(nodeId);
-            setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, runninghubLastError: undefined, runninghubStatus: "提交中..." } } : n)));
+            if (rhMode === "app") {
+                // --- App mode (RHA) ---
+                const workflow = useRunningHubStore.getState().workflows.find((w) => w.id === metadata.rhWorkflowId);
+                if (!runningHubHasApiKey) {
+                    message.warning("请先配置 RunningHub API Key");
+                    openRunningHubDialog();
+                    return;
+                }
+                if (!workflow) {
+                    message.warning("请先配置 RunningHub 工作流");
+                    openRunningHubDialog();
+                    return;
+                }
 
-            try {
-                const stored = node.metadata?.runninghubParamValues || {};
-                const promptParams = (workflow.params || []).filter((p) => p.role === "prompt").sort((a, b) => a.order - b.order);
-                const imageParamsSorted = (workflow.params || []).filter((p) => p.role === "image").sort((a, b) => a.order - b.order);
-                const videoParamsSorted = (workflow.params || []).filter((p) => p.role === "video").sort((a, b) => a.order - b.order);
-                const booleanParams = (workflow.params || []).filter((p) => p.role === "boolean");
-                const numberStringParams = (workflow.params || []).filter((p) => p.role === "number" || p.role === "string");
+                const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
+                setRunningNodeId(nodeId);
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, rhLastError: undefined, rhStatus: "提交中..." } } : n)));
 
-                const upstreamTexts = collectUpstreamTexts(nodeId, nodesRef.current, connectionsRef.current);
-                const textMapping = resolveUpstreamMapping(promptParams, stored, upstreamTexts);
+                try {
+                    const stored = metadata.rhParamValues || {};
+                    const promptParams = (workflow.params || []).filter((p) => p.role === "prompt").sort((a, b) => a.order - b.order);
+                    const imageParamsSorted = (workflow.params || []).filter((p) => p.role === "image").sort((a, b) => a.order - b.order);
+                    const videoParamsSorted = (workflow.params || []).filter((p) => p.role === "video").sort((a, b) => a.order - b.order);
+                    const audioParamsSorted = (workflow.params || []).filter((p) => p.role === "audio").sort((a, b) => a.order - b.order);
+                    const booleanParams = (workflow.params || []).filter((p) => p.role === "boolean");
+                    const numberStringParams = (workflow.params || []).filter((p) => p.role === "number" || p.role === "string");
 
-                const texts: Record<string, string> = {};
-                for (const p of promptParams) {
-                    const key = paramKey(p);
-                    const hasExplicitSource = Boolean(stored[`@source:${key}`]);
-                    const mapped = textMapping.get(key);
-                    if (hasExplicitSource && mapped) {
-                        texts[key] = mapped;
-                    } else {
-                        const manual = stored[key] ?? "";
-                        texts[key] = manual || mapped || "";
+                    const upstreamTexts = collectUpstreamTexts(nodeId, nodesRef.current, connectionsRef.current);
+                    const textMapping = resolveUpstreamMapping(promptParams, stored, upstreamTexts);
+
+                    const texts: Record<string, string> = {};
+                    for (const p of promptParams) {
+                        const key = paramKey(p);
+                        const hasExplicitSource = Boolean(stored[`@source:${key}`]);
+                        const mapped = textMapping.get(key);
+                        if (hasExplicitSource && mapped) {
+                            texts[key] = mapped;
+                        } else {
+                            const manual = stored[key] ?? "";
+                            texts[key] = manual || mapped || "";
+                        }
+                    }
+
+                    for (const p of numberStringParams) {
+                        const val = stored[paramKey(p)] ?? p.defaultValue ?? "";
+                        if (val) texts[paramKey(p)] = val;
+                    }
+
+                    const booleans: Record<string, string> = {};
+                    for (const p of booleanParams) booleans[paramKey(p)] = stored[paramKey(p)] ?? p.defaultValue ?? "false";
+
+                    const mediaBlobs = new Map<string, Blob>();
+
+                    const upstreamImageItems = await collectUpstreamImageBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                    const imageMapping = resolveUpstreamMapping(imageParamsSorted, stored, upstreamImageItems);
+                    for (const [key, blob] of imageMapping) mediaBlobs.set(key, blob);
+
+                    const upstreamVideoItems = await collectUpstreamVideoBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                    const videoMapping = resolveUpstreamMapping(videoParamsSorted, stored, upstreamVideoItems);
+                    for (const [key, blob] of videoMapping) mediaBlobs.set(key, blob);
+
+                    const upstreamAudioItems = await collectUpstreamAudioBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                    const audioMapping = resolveUpstreamMapping(audioParamsSorted, stored, upstreamAudioItems);
+                    for (const [key, blob] of audioMapping) mediaBlobs.set(key, blob);
+
+                    const mediaFileIds: Record<string, string> = {};
+                    const images: Record<string, string> = {};
+                    const videos: Record<string, string> = {};
+                    for (const [key, blob] of mediaBlobs) {
+                        const uploaded = await uploadFile(blob, "media.bin");
+                        mediaFileIds[key] = uploaded.fileId;
+                        if (imageMapping.has(key)) images[key] = "__media__";
+                        else if (videoMapping.has(key)) videos[key] = "__media__";
+                    }
+
+                    const values: RunningHubParamValues = { texts, images, videos, booleans };
+                    const nodeInfoList = buildNodeInfoList(workflow, values);
+                    const result = await submitTaskAndWait(
+                        () => submitRunningHubTask({ workflowId: workflow.workflowId, nodeInfoList, mediaFileIds }),
+                        abortController.signal,
+                        (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "runninghub" }),
+                    );
+                    const rhResults = result.files.map((f) => ({
+                        type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
+                        id: nanoid(),
+                        url: fileUrl(f.fileId),
+                        storageKey: f.fileId,
+                        width: f.width,
+                        height: f.height,
+                        bytes: f.size,
+                        mimeType: f.mimeType,
+                    }));
+                    createRunningHubOutputNodes(nodeId, rhResults);
+                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, rhStatus: undefined, rhTaskId: undefined } } : n)));
+                } catch (error) {
+                    const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "执行失败";
+                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, rhLastError: errorMessage, rhStatus: undefined } } : n)));
+                } finally {
+                    finishGenerationRequest(nodeId, abortController);
+                    setRunningNodeId(null);
+                }
+            } else {
+                // --- ComfyUI mode (RHC) ---
+                const workflowSource = metadata.rhWorkflowSource || "preset";
+                const instanceType = metadata.rhInstanceType || "default";
+                const timeout = metadata.rhTimeout || 600;
+
+                const rhHasApiKey = useRunningHubStore.getState().hasApiKey;
+                const openRHDialog = useRunningHubStore.getState().openDialog;
+                const localComfyuiPresets = useComfyUIStore.getState().presets;
+                const openCUIDialog = useComfyUIStore.getState().openDialog;
+
+                if (workflowSource === "upstream") {
+                    if (!rhHasApiKey) {
+                        message.warning("请先配置 RunningHub API Key");
+                        openRHDialog();
+                        return;
+                    }
+                    const upstreamTexts = collectUpstreamTexts(nodeId, nodesRef.current, connectionsRef.current);
+                    if (!upstreamTexts.length) {
+                        message.warning("请先连接一个包含工作流 JSON 的文本节点");
+                        return;
+                    }
+                    const workflowJson = upstreamTexts[0].value;
+                    try {
+                        JSON.parse(workflowJson);
+                    } catch {
+                        message.error("上游文本节点内容不是有效的 JSON");
+                        return;
+                    }
+
+                    const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
+                    setRunningNodeId(nodeId);
+                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, rhLastError: undefined } } : n)));
+
+                    const executableJson = prepareWorkflowForExecution(workflowJson);
+
+                    try {
+                        const result = await submitTaskAndWait(
+                            () => submitRunningHubComfyUITask({ workflowJson: executableJson, instanceType, timeout }),
+                            abortController.signal,
+                            (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "runninghub_comfyui" }),
+                        );
+                        const outputResults = result.files.map((f) => ({
+                            type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
+                            id: nanoid(),
+                            url: fileUrl(f.fileId),
+                            storageKey: f.fileId,
+                            width: f.width,
+                            height: f.height,
+                            bytes: f.size,
+                            mimeType: f.mimeType,
+                        }));
+                        createRunningHubOutputNodes(nodeId, outputResults);
+                        setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, rhLastError: undefined } } : n)));
+                    } catch (error) {
+                        const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "执行失败";
+                        setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, rhLastError: errorMessage } } : n)));
+                    } finally {
+                        finishGenerationRequest(nodeId, abortController);
+                        setRunningNodeId(null);
+                    }
+                } else {
+                    // preset mode
+                    const preset = localComfyuiPresets.find((p) => p.id === metadata.rhPresetId);
+                    if (!preset) {
+                        message.warning("请先选择一个 ComfyUI 预设工作流");
+                        openCUIDialog();
+                        return;
+                    }
+
+                    let workflowJson = preset.workflowJson;
+
+                    if (preset.params?.length) {
+                        const stored = metadata.rhParamValues || {};
+                        const promptParams = preset.params.filter((p) => p.role === "prompt").sort((a, b) => a.order - b.order);
+                        const upstreamTexts = collectUpstreamTexts(nodeId, nodesRef.current, connectionsRef.current);
+
+                        const resolvedValues: Record<string, string> = {};
+                        for (const param of preset.params) {
+                            if (param.role === "ignore") continue;
+                            const key = comfyuiParamKey(param);
+                            if (param.role === "prompt") {
+                                const sKey = `@source:${key}`;
+                                const explicitSource = stored[sKey];
+                                if (explicitSource && explicitSource !== "__auto__") {
+                                    const srcNode = upstreamTexts.find((t) => t.nodeId === explicitSource);
+                                    if (srcNode) { resolvedValues[key] = srcNode.value; continue; }
+                                }
+                                const autoIdx = promptParams.indexOf(param);
+                                const autoSrc = upstreamTexts[autoIdx];
+                                if (autoSrc && !stored[key]) { resolvedValues[key] = autoSrc.value; continue; }
+                                resolvedValues[key] = stored[key] ?? param.defaultValue ?? "";
+                            } else {
+                                resolvedValues[key] = stored[key] ?? param.defaultValue ?? "";
+                            }
+                        }
+                        workflowJson = buildComfyUIWorkflowWithParams(preset.workflowJson, preset.params, resolvedValues);
+                    }
+
+                    try {
+                        JSON.parse(workflowJson);
+                    } catch {
+                        message.error("工作流 JSON 格式无效");
+                        return;
+                    }
+
+                    const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
+                    setRunningNodeId(nodeId);
+                    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, rhLastError: undefined } } : n)));
+
+                    const executableJson = prepareWorkflowForExecution(workflowJson);
+
+                    try {
+                        const mediaFileIds: Record<string, string> = {};
+
+                        if (preset.params?.length) {
+                            const stored = metadata.rhParamValues || {};
+                            const imageParamsSorted = preset.params.filter((p) => p.role === "image").sort((a, b) => a.order - b.order);
+                            const videoParamsSorted = preset.params.filter((p) => p.role === "video").sort((a, b) => a.order - b.order);
+                            const audioParamsSorted = preset.params.filter((p) => p.role === "audio").sort((a, b) => a.order - b.order);
+
+                            const mediaBlobs = new Map<string, Blob>();
+
+                            if (imageParamsSorted.length) {
+                                const upstreamImageItems = await collectUpstreamImageBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                                const imageMapping = resolveUpstreamMapping(imageParamsSorted as any, stored, upstreamImageItems);
+                                for (const [key, blob] of imageMapping) mediaBlobs.set(key, blob);
+                            }
+                            if (videoParamsSorted.length) {
+                                const upstreamVideoItems = await collectUpstreamVideoBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                                const videoMapping = resolveUpstreamMapping(videoParamsSorted as any, stored, upstreamVideoItems);
+                                for (const [key, blob] of videoMapping) mediaBlobs.set(key, blob);
+                            }
+                            if (audioParamsSorted.length) {
+                                const upstreamAudioItems = await collectUpstreamAudioBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                                const audioMapping = resolveUpstreamMapping(audioParamsSorted as any, stored, upstreamAudioItems);
+                                for (const [key, blob] of audioMapping) mediaBlobs.set(key, blob);
+                            }
+
+                            for (const [key, blob] of mediaBlobs) {
+                                const uploaded = await uploadFile(blob, "media.bin");
+                                mediaFileIds[key] = uploaded.fileId;
+                            }
+                        }
+
+                        const result = await submitTaskAndWait(
+                            () => submitRunningHubComfyUITask({ workflowJson: executableJson, instanceType, timeout, mediaFileIds: Object.keys(mediaFileIds).length ? mediaFileIds : undefined }),
+                            abortController.signal,
+                            (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "runninghub_comfyui" }),
+                        );
+                        const outputResults = result.files.map((f) => ({
+                            type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
+                            id: nanoid(),
+                            url: fileUrl(f.fileId),
+                            storageKey: f.fileId,
+                            width: f.width,
+                            height: f.height,
+                            bytes: f.size,
+                            mimeType: f.mimeType,
+                        }));
+                        createRunningHubOutputNodes(nodeId, outputResults);
+                        setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, rhLastError: undefined } } : n)));
+                    } catch (error) {
+                        const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "执行失败";
+                        setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, rhLastError: errorMessage } } : n)));
+                    } finally {
+                        finishGenerationRequest(nodeId, abortController);
+                        setRunningNodeId(null);
                     }
                 }
-
-                for (const p of numberStringParams) {
-                    const val = stored[paramKey(p)] ?? p.defaultValue ?? "";
-                    if (val) texts[paramKey(p)] = val;
-                }
-
-                const booleans: Record<string, string> = {};
-                for (const p of booleanParams) booleans[paramKey(p)] = stored[paramKey(p)] ?? p.defaultValue ?? "false";
-
-                const mediaBlobs = new Map<string, Blob>();
-
-                const upstreamImageItems = await collectUpstreamImageBlobs(nodeId, nodesRef.current, connectionsRef.current);
-                const imageMapping = resolveUpstreamMapping(imageParamsSorted, stored, upstreamImageItems);
-                for (const [key, blob] of imageMapping) mediaBlobs.set(key, blob);
-
-                const upstreamVideoItems = await collectUpstreamVideoBlobs(nodeId, nodesRef.current, connectionsRef.current);
-                const videoMapping = resolveUpstreamMapping(videoParamsSorted, stored, upstreamVideoItems);
-                for (const [key, blob] of videoMapping) mediaBlobs.set(key, blob);
-
-                const mediaFileIds: Record<string, string> = {};
-                const images: Record<string, string> = {};
-                const videos: Record<string, string> = {};
-                for (const [key, blob] of mediaBlobs) {
-                    const uploaded = await uploadFile(blob, "media.bin");
-                    mediaFileIds[key] = uploaded.fileId;
-                    if (imageMapping.has(key)) images[key] = "__media__";
-                    else videos[key] = "__media__";
-                }
-
-                const values: RunningHubParamValues = { texts, images, videos, booleans };
-                const nodeInfoList = buildNodeInfoList(workflow, values);
-                const result = await submitTaskAndWait(
-                    () => submitRunningHubTask({ workflowId: workflow.workflowId, nodeInfoList, mediaFileIds }),
-                    abortController.signal,
-                    (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "runninghub" }),
-                );
-                const rhResults = result.files.map((f) => ({
-                    type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
-                    id: nanoid(),
-                    url: fileUrl(f.fileId),
-                    storageKey: f.fileId,
-                    width: f.width,
-                    height: f.height,
-                    bytes: f.size,
-                    mimeType: f.mimeType,
-                }));
-                createRunningHubOutputNodes(nodeId, rhResults);
-                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, runninghubStatus: undefined, runninghubTaskId: undefined } } : n)));
-            } catch (error) {
-                const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "执行失败";
-                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubLastError: errorMessage, runninghubStatus: undefined } } : n)));
-            } finally {
-                finishGenerationRequest(nodeId, abortController);
-                setRunningNodeId(null);
             }
         },
-        [message, openRunningHubDialog, runningHubWorkflows, runningHubHasApiKey, startGenerationRequest, finishGenerationRequest],
+        [message, openRunningHubDialog, runningHubHasApiKey, startGenerationRequest, finishGenerationRequest],
     );
 
     const handleRunningHubResume = useCallback(
         async (nodeId: string) => {
             const node = nodesRef.current.find((n) => n.id === nodeId);
-            const taskId = node?.metadata?.runninghubTaskId;
+            const taskId = node?.metadata?.rhTaskId;
             if (!runningHubHasApiKey) {
                 message.warning("请先配置 RunningHub API Key");
                 openRunningHubDialog();
@@ -2614,7 +2802,7 @@ function InfiniteCanvasPage() {
 
             const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
             setRunningNodeId(nodeId);
-            setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, runninghubLastError: undefined, runninghubStatus: "恢复查询..." } } : n)));
+            setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, rhLastError: undefined, rhStatus: "恢复查询..." } } : n)));
 
             try {
                 const result = await submitTaskAndWait(
@@ -2633,10 +2821,10 @@ function InfiniteCanvasPage() {
                     mimeType: f.mimeType,
                 }));
                 createRunningHubOutputNodes(nodeId, rhResults);
-                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, runninghubStatus: undefined, runninghubTaskId: undefined } } : n)));
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, rhStatus: undefined, rhTaskId: undefined } } : n)));
             } catch (error) {
                 const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "查询失败";
-                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, runninghubLastError: errorMessage, runninghubStatus: undefined } } : n)));
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, rhLastError: errorMessage, rhStatus: undefined } } : n)));
             } finally {
                 finishGenerationRequest(nodeId, abortController);
                 setRunningNodeId(null);
@@ -2644,6 +2832,141 @@ function InfiniteCanvasPage() {
         },
         [message, openRunningHubDialog, runningHubHasApiKey, startGenerationRequest, finishGenerationRequest],
     );
+
+
+    const handleComfyUIParamChange = useCallback((nodeId: string, key: string, value: string) => {
+        setNodes((prev) => prev.map((n) => (n.id !== nodeId ? n : { ...n, metadata: { ...n.metadata, comfyuiParamValues: { ...(n.metadata?.comfyuiParamValues || {}), [key]: value } } })));
+    }, []);
+
+    const handleComfyUIExecute = useCallback(
+        async (nodeId: string) => {
+            const node = nodesRef.current.find((n) => n.id === nodeId);
+            if (!node) return;
+            const metadata = node.metadata || {};
+            const workflowSource = metadata.comfyuiWorkflowSource || "preset";
+
+            let workflowJson = "";
+            if (workflowSource === "upstream") {
+                const upstreamTexts = collectUpstreamTexts(nodeId, nodesRef.current, connectionsRef.current);
+                if (!upstreamTexts.length) {
+                    message.warning("请先连接一个包含工作流 JSON 的文本节点");
+                    return;
+                }
+                workflowJson = upstreamTexts[0].value;
+            } else {
+                const preset = comfyuiPresets.find((p) => p.id === metadata.comfyuiPresetId);
+                if (!preset) {
+                    message.warning("请先选择一个 ComfyUI 预设工作流");
+                    openComfyUIDialog();
+                    return;
+                }
+                workflowJson = preset.workflowJson;
+
+                if (preset.params?.length) {
+                    const stored = metadata.comfyuiParamValues || {};
+                    const promptParams = preset.params.filter((p) => p.role === "prompt").sort((a, b) => a.order - b.order);
+                    const upstreamTexts = collectUpstreamTexts(nodeId, nodesRef.current, connectionsRef.current);
+
+                    const resolvedValues: Record<string, string> = {};
+                    for (const param of preset.params) {
+                        if (param.role === "ignore") continue;
+                        const key = comfyuiParamKey(param);
+                        if (param.role === "prompt") {
+                            const sKey = `@source:${key}`;
+                            const explicitSource = stored[sKey];
+                            if (explicitSource && explicitSource !== "__auto__") {
+                                const srcNode = upstreamTexts.find((t) => t.nodeId === explicitSource);
+                                if (srcNode) { resolvedValues[key] = srcNode.value; continue; }
+                            }
+                            const autoIdx = promptParams.indexOf(param);
+                            const autoSrc = upstreamTexts[autoIdx];
+                            if (autoSrc && !stored[key]) { resolvedValues[key] = autoSrc.value; continue; }
+                            resolvedValues[key] = stored[key] ?? param.defaultValue ?? "";
+                        } else {
+                            resolvedValues[key] = stored[key] ?? param.defaultValue ?? "";
+                        }
+                    }
+                    workflowJson = buildComfyUIWorkflowWithParams(preset.workflowJson, preset.params, resolvedValues);
+                }
+            }
+
+            try {
+                JSON.parse(workflowJson);
+            } catch {
+                message.error("工作流 JSON 格式无效");
+                return;
+            }
+
+            const abortController = startGenerationRequest(nodeId, nodeId, nodeId);
+            setRunningNodeId(nodeId);
+            setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "loading" as const, comfyuiLastError: undefined } } : n)));
+
+            const executableJson = prepareWorkflowForExecution(workflowJson);
+
+            try {
+                const mediaFileIds: Record<string, string> = {};
+
+                if (workflowSource === "preset") {
+                    const preset = comfyuiPresets.find((p) => p.id === metadata.comfyuiPresetId);
+                    if (preset?.params?.length) {
+                        const stored = metadata.comfyuiParamValues || {};
+                        const imageParamsSorted = preset.params.filter((p) => p.role === "image").sort((a, b) => a.order - b.order);
+                        const videoParamsSorted = preset.params.filter((p) => p.role === "video").sort((a, b) => a.order - b.order);
+                        const audioParamsSorted = preset.params.filter((p) => p.role === "audio").sort((a, b) => a.order - b.order);
+
+                        const mediaBlobs = new Map<string, Blob>();
+
+                        if (imageParamsSorted.length) {
+                            const upstreamImageItems = await collectUpstreamImageBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                            const imageMapping = resolveUpstreamMapping(imageParamsSorted as any, stored, upstreamImageItems);
+                            for (const [key, blob] of imageMapping) mediaBlobs.set(key, blob);
+                        }
+                        if (videoParamsSorted.length) {
+                            const upstreamVideoItems = await collectUpstreamVideoBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                            const videoMapping = resolveUpstreamMapping(videoParamsSorted as any, stored, upstreamVideoItems);
+                            for (const [key, blob] of videoMapping) mediaBlobs.set(key, blob);
+                        }
+                        if (audioParamsSorted.length) {
+                            const upstreamAudioItems = await collectUpstreamAudioBlobs(nodeId, nodesRef.current, connectionsRef.current);
+                            const audioMapping = resolveUpstreamMapping(audioParamsSorted as any, stored, upstreamAudioItems);
+                            for (const [key, blob] of audioMapping) mediaBlobs.set(key, blob);
+                        }
+
+                        for (const [key, blob] of mediaBlobs) {
+                            const uploaded = await uploadFile(blob, "media.bin");
+                            mediaFileIds[key] = uploaded.fileId;
+                        }
+                    }
+                }
+
+                const result = await submitTaskAndWait(
+                    () => submitComfyUITask({ workflowJson: executableJson, timeout: metadata.comfyuiTimeout, mediaFileIds: Object.keys(mediaFileIds).length ? mediaFileIds : undefined }),
+                    abortController.signal,
+                    (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "comfyui" }),
+                );
+                const outputResults = result.files.map((f) => ({
+                    type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
+                    id: nanoid(),
+                    url: fileUrl(f.fileId),
+                    storageKey: f.fileId,
+                    width: f.width,
+                    height: f.height,
+                    bytes: f.size,
+                    mimeType: f.mimeType,
+                }));
+                createRunningHubOutputNodes(nodeId, outputResults);
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, comfyuiLastError: undefined } } : n)));
+            } catch (error) {
+                const errorMessage = error instanceof DOMException && error.name === "AbortError" ? "已停止" : error instanceof Error ? error.message : "执行失败";
+                setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "error" as const, comfyuiLastError: errorMessage } } : n)));
+            } finally {
+                finishGenerationRequest(nodeId, abortController);
+                setRunningNodeId(null);
+            }
+        },
+        [message, comfyuiPresets, openComfyUIDialog, startGenerationRequest, finishGenerationRequest],
+    );
+
 
     const createRunningHubOutputNodes = useCallback((sourceNodeId: string, results: Array<{ type: "image" | "video" | "text" | "audio"; id: string; url?: string; dataUrl?: string; storageKey?: string; width?: number; height?: number; bytes?: number; mimeType?: string; durationMs?: number; text?: string }>) => {
         const sourceNode = nodesRef.current.find((n) => n.id === sourceNodeId);
@@ -3072,7 +3395,7 @@ function InfiniteCanvasPage() {
                                     <CanvasRunningHubPanel
                                         node={panelNode}
                                         isRunning={runningNodeId === panelNode.id}
-                                        hasTaskId={Boolean(panelNode.metadata?.runninghubTaskId)}
+                                        hasTaskId={Boolean(panelNode.metadata?.rhTaskId)}
                                         upstreamNodes={connectionsRef.current
                                             .filter((c) => c.toNodeId === panelNode.id)
                                             .map((c) => nodesRef.current.find((n) => n.id === c.fromNodeId))
@@ -3082,6 +3405,20 @@ function InfiniteCanvasPage() {
                                         onConfigChange={handleConfigNodeChange}
                                         onExecute={handleRunningHubExecute}
                                         onResume={handleRunningHubResume}
+                                        onStop={confirmStopGeneration}
+                                    />
+                                ) : panelNode.type === CanvasNodeType.ComfyUI ? (
+                                    <CanvasComfyUIPanel
+                                        node={panelNode}
+                                        isRunning={runningNodeId === panelNode.id}
+                                        upstreamNodes={connectionsRef.current
+                                            .filter((c) => c.toNodeId === panelNode.id)
+                                            .map((c) => nodesRef.current.find((n) => n.id === c.fromNodeId))
+                                            .filter(Boolean)
+                                            .map((n) => ({ id: n!.id, title: n!.title, type: n!.type, content: n!.metadata?.content }))}
+                                        onConfigChange={handleConfigNodeChange}
+                                        onParamChange={handleComfyUIParamChange}
+                                        onExecute={handleComfyUIExecute}
                                         onStop={confirmStopGeneration}
                                     />
                                 ) : (
@@ -3196,6 +3533,7 @@ function InfiniteCanvasPage() {
                     onAddText={() => createNode(CanvasNodeType.Text)}
                     onAddConfig={() => createNode(CanvasNodeType.Config)}
                     onAddRunningHub={() => createNode(CanvasNodeType.RunningHub)}
+                    onAddComfyUI={() => createNode(CanvasNodeType.ComfyUI)}
                     onUndo={undoCanvas}
                     onRedo={redoCanvas}
                     onUpload={() => handleUploadRequest()}
@@ -3752,6 +4090,18 @@ async function collectUpstreamVideoBlobs(nodeId: string, nodes: CanvasNodeData[]
     const videoNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id) && n.type === CanvasNodeType.Video && n.metadata?.storageKey);
     const items: Array<{ nodeId: string; value: Blob }> = [];
     for (const node of videoNodes) {
+        if (!node.metadata?.storageKey) continue;
+        const blob = await getMediaBlob(node.metadata.storageKey);
+        if (blob) items.push({ nodeId: node.id, value: blob });
+    }
+    return items;
+}
+
+async function collectUpstreamAudioBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): Promise<Array<{ nodeId: string; value: Blob }>> {
+    const upstreamNodeIds = connections.filter((c) => c.toNodeId === nodeId).map((c) => c.fromNodeId);
+    const audioNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id) && n.type === CanvasNodeType.Audio && n.metadata?.storageKey);
+    const items: Array<{ nodeId: string; value: Blob }> = [];
+    for (const node of audioNodes) {
         if (!node.metadata?.storageKey) continue;
         const blob = await getMediaBlob(node.metadata.storageKey);
         if (blob) items.push({ nodeId: node.id, value: blob });

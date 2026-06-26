@@ -8,6 +8,7 @@ import { formatBytes } from "@/lib/image-utils";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { RunningHubNodeContent } from "./canvas-runninghub-node";
+import { ComfyUINodeContent } from "./canvas-comfyui-node";
 import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
@@ -336,6 +337,7 @@ function NodeContent(props: NodeContentRendererProps) {
 
     if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (props.node.type === CanvasNodeType.RunningHub) return <RunningHubNodeContent {...props} />;
+    if (props.node.type === CanvasNodeType.ComfyUI) return <ComfyUINodeContent {...props} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
     if (props.node.metadata?.status === "loading") {
         if (props.node.type === CanvasNodeType.Text && props.node.metadata?.content) {
@@ -358,9 +360,10 @@ const nodeContentRenderers = {
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
     [CanvasNodeType.RunningHub]: RunningHubNodeContent,
+    [CanvasNodeType.ComfyUI]: ComfyUINodeContent,
 } satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
 
-const POLLING_PROVIDERS = ["openai_video", "seedance", "runninghub"];
+const POLLING_PROVIDERS = ["openai_video", "seedance", "runninghub", "comfyui", "runninghub_comfyui"];
 
 function LoadingContent({ theme, progressText, progress, taskProvider }: Pick<NodeContentRendererProps, "theme"> & { progressText?: string; progress?: number; taskProvider?: string }) {
     const isPolling = taskProvider && POLLING_PROVIDERS.includes(taskProvider);

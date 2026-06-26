@@ -15,6 +15,7 @@ export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.Video]: { width: 420, height: 236, title: "Video" },
     [CanvasNodeType.Audio]: { width: 340, height: 120, title: "Audio" },
     [CanvasNodeType.RunningHub]: { width: 360, height: 280, title: "RunningHub" },
+    [CanvasNodeType.ComfyUI]: { width: 360, height: 280, title: "ComfyUI" },
 } satisfies Record<CanvasNodeType, { width: number; height: number; title: string }>;
 
 export const NODE_SPECS = {
@@ -40,6 +41,10 @@ export const NODE_SPECS = {
     },
     [CanvasNodeType.RunningHub]: {
         ...NODE_DEFAULT_SIZE[CanvasNodeType.RunningHub],
+        metadata: { status: "idle" },
+    },
+    [CanvasNodeType.ComfyUI]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.ComfyUI],
         metadata: { status: "idle" },
     },
 } satisfies Record<CanvasNodeType, CanvasNodeSpec>;

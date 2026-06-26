@@ -9,6 +9,7 @@ import { backendWs } from "@/services/backend-ws";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useRunningHubStore } from "@/stores/use-runninghub-store";
+import { useComfyUIStore } from "@/stores/use-comfyui-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -32,6 +33,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     const fetchAssets = useAssetStore((state) => state.fetchAssets);
     const fetchConfigFromServer = useConfigStore((state) => state.fetchConfigFromServer);
     const fetchRunningHubConfigFromServer = useRunningHubStore((state) => state.fetchConfigFromServer);
+    const fetchComfyUIConfigFromServer = useComfyUIStore((state) => state.fetchConfigFromServer);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -55,8 +57,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         if (!authReady || !userId) return;
-        void Promise.all([fetchConfigFromServer(), fetchRunningHubConfigFromServer()]);
-    }, [authReady, fetchConfigFromServer, fetchRunningHubConfigFromServer, userId]);
+        void Promise.all([fetchConfigFromServer(), fetchRunningHubConfigFromServer(), fetchComfyUIConfigFromServer()]);
+    }, [authReady, fetchConfigFromServer, fetchRunningHubConfigFromServer, fetchComfyUIConfigFromServer, userId]);
 
     useEffect(() => {
         if (!authReady || !userId || assetsHydrated) return;

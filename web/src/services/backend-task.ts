@@ -182,3 +182,43 @@ export async function submitRunningHubTask(params: {
         },
     });
 }
+
+export async function submitComfyUITask(params: {
+    workflowJson: string;
+    timeout?: number;
+    mediaFileIds?: Record<string, string>;
+}): Promise<TaskResponse> {
+    return submitTask({
+        type: "comfyui",
+        model: "",
+        prompt: "",
+        params: {
+            workflowJson: params.workflowJson,
+            timeout: params.timeout,
+            mediaFileIds: params.mediaFileIds,
+        },
+    });
+}
+
+export async function submitRunningHubComfyUITask(params: {
+    workflowId?: string;
+    workflowJson?: string;
+    nodeInfoList?: any[];
+    mediaFileIds?: Record<string, string>;
+    instanceType?: string;
+    timeout?: number;
+}): Promise<TaskResponse> {
+    return submitTask({
+        type: "runninghub_comfyui",
+        model: "",
+        prompt: "",
+        params: {
+            workflowId: params.workflowId,
+            workflowJson: params.workflowJson,
+            nodeInfoList: params.nodeInfoList,
+            mediaFileIds: params.mediaFileIds,
+            instanceType: params.instanceType,
+            timeout: params.timeout,
+        },
+    });
+}

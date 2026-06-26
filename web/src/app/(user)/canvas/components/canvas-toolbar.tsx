@@ -21,6 +21,7 @@ export function CanvasToolbar({
     onAddText,
     onAddConfig,
     onAddRunningHub,
+    onAddComfyUI,
     onUndo,
     onRedo,
     onUpload,
@@ -42,6 +43,7 @@ export function CanvasToolbar({
     onAddText: () => void;
     onAddConfig: () => void;
     onAddRunningHub: () => void;
+    onAddComfyUI: () => void;
     onUndo: () => void;
     onRedo: () => void;
     onUpload: () => void;
@@ -96,6 +98,9 @@ export function CanvasToolbar({
                 </ToolbarButton>
                 <ToolbarButton id="tool-runninghub" label="RunningHub" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddRunningHub}>
                     <span className="text-sm font-bold leading-none">RH</span>
+                </ToolbarButton>
+                <ToolbarButton id="tool-comfyui" label="ComfyUI" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddComfyUI}>
+                    <span className="text-sm font-bold leading-none">CU</span>
                 </ToolbarButton>
                 <ToolbarButton id="tool-upload" label="上传素材" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onUpload}>
                     <Upload className="size-4.5" />

@@ -2,7 +2,7 @@ import { nanoid } from "nanoid";
 
 // ========== 参数角色 ==========
 
-export type RunningHubParamRole = "prompt" | "image" | "video" | "boolean" | "number" | "string" | "fixed" | "ignore";
+export type RunningHubParamRole = "prompt" | "image" | "video" | "audio" | "boolean" | "number" | "string" | "fixed" | "ignore";
 
 export type RunningHubParam = {
     nodeId: string;
@@ -32,7 +32,7 @@ export type RunningHubWorkflow = {
     id: string;
     name: string;
     workflowId: string;
-    outputType: "image" | "video" | "auto";
+    outputType: "image" | "video" | "audio" | "auto";
     instanceType: "default" | "plus";
     params: RunningHubParam[];
 };
@@ -87,6 +87,7 @@ export const PARAM_ROLE_OPTIONS: Array<{ label: string; value: RunningHubParamRo
     { label: "提示词", value: "prompt" },
     { label: "图片输入", value: "image" },
     { label: "视频输入", value: "video" },
+    { label: "音频输入", value: "audio" },
     { label: "布尔开关", value: "boolean" },
     { label: "数字", value: "number" },
     { label: "字符串", value: "string" },

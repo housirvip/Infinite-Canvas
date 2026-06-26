@@ -43,16 +43,18 @@ type RunningHubWorkflowPayload struct {
 }
 
 type UpdateRunningHubConfigRequest struct {
-	APIKey    *string                      `json:"apiKey"`
-	BaseURL   *string                      `json:"baseUrl"`
-	Workflows *[]RunningHubWorkflowPayload `json:"workflows"`
+	APIKey           *string                      `json:"apiKey"`
+	BaseURL          *string                      `json:"baseUrl"`
+	Workflows        *[]RunningHubWorkflowPayload `json:"workflows"`
+	ComfyUIWorkflows *[]RunningHubWorkflowPayload `json:"comfyuiWorkflows"`
 }
 
 type RunningHubConfigResponse struct {
-	HasAPIKey bool                        `json:"hasApiKey"`
-	BaseURL   string                      `json:"baseUrl"`
-	Workflows []RunningHubWorkflowPayload `json:"workflows"`
-	UpdatedAt string                      `json:"updatedAt,omitempty"`
+	HasAPIKey        bool                        `json:"hasApiKey"`
+	BaseURL          string                      `json:"baseUrl"`
+	Workflows        []RunningHubWorkflowPayload `json:"workflows"`
+	ComfyUIWorkflows []RunningHubWorkflowPayload `json:"comfyuiWorkflows"`
+	UpdatedAt        string                      `json:"updatedAt,omitempty"`
 }
 
 func (h *RunningHubHandler) GetConfig(c *gin.Context) {
@@ -91,6 +93,11 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
+	if req.ComfyUIWorkflows != nil && !isValidRunningHubWorkflows(*req.ComfyUIWorkflows) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid RunningHub ComfyUI workflow"})
+		return
+	}
+
 	if req.BaseURL != nil && !isValidRunningHubBaseURL(*req.BaseURL) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid RunningHub base URL"})
 		return
@@ -103,7 +110,7 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
-	if req.APIKey == nil && req.BaseURL == nil && req.Workflows == nil {
+	if req.APIKey == nil && req.BaseURL == nil && req.Workflows == nil && req.ComfyUIWorkflows == nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusOK, gin.H{"config": defaultRunningHubConfigResponse()})
 			return
@@ -142,6 +149,15 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 			config.Workflows = string(workflowsJSON)
 		}
 
+		if req.ComfyUIWorkflows != nil {
+			cuWorkflowsJSON, err := json.Marshal(*req.ComfyUIWorkflows)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save RunningHub config"})
+				return
+			}
+			config.ComfyUIWorkflows = string(cuWorkflowsJSON)
+		}
+
 		if req.BaseURL != nil {
 			config.BaseURL = *req.BaseURL
 		}
@@ -176,6 +192,15 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 			updates["workflows"] = string(workflowsJSON)
 		}
 
+		if req.ComfyUIWorkflows != nil {
+			cuWorkflowsJSON, err := json.Marshal(*req.ComfyUIWorkflows)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update RunningHub config"})
+				return
+			}
+			updates["comfyui_workflows"] = string(cuWorkflowsJSON)
+		}
+
 		if req.BaseURL != nil {
 			updates["base_url"] = *req.BaseURL
 		}
@@ -203,16 +228,18 @@ func (h *RunningHubHandler) UpdateConfig(c *gin.Context) {
 
 func defaultRunningHubConfigResponse() RunningHubConfigResponse {
 	return RunningHubConfigResponse{
-		HasAPIKey: false,
-		Workflows: []RunningHubWorkflowPayload{},
+		HasAPIKey:        false,
+		Workflows:        []RunningHubWorkflowPayload{},
+		ComfyUIWorkflows: []RunningHubWorkflowPayload{},
 	}
 }
 
 func buildRunningHubConfigResponse(config *model.RunningHubConfig) (RunningHubConfigResponse, error) {
 	resp := RunningHubConfigResponse{
-		HasAPIKey: config.EncryptedAPIKey != "",
-		BaseURL:   config.BaseURL,
-		Workflows: []RunningHubWorkflowPayload{},
+		HasAPIKey:        config.EncryptedAPIKey != "",
+		BaseURL:          config.BaseURL,
+		Workflows:        []RunningHubWorkflowPayload{},
+		ComfyUIWorkflows: []RunningHubWorkflowPayload{},
 	}
 
 	if strings.TrimSpace(config.Workflows) != "" {
@@ -221,6 +248,15 @@ func buildRunningHubConfigResponse(config *model.RunningHubConfig) (RunningHubCo
 		}
 		if resp.Workflows == nil {
 			resp.Workflows = []RunningHubWorkflowPayload{}
+		}
+	}
+
+	if strings.TrimSpace(config.ComfyUIWorkflows) != "" {
+		if err := json.Unmarshal([]byte(config.ComfyUIWorkflows), &resp.ComfyUIWorkflows); err != nil {
+			return RunningHubConfigResponse{}, err
+		}
+		if resp.ComfyUIWorkflows == nil {
+			resp.ComfyUIWorkflows = []RunningHubWorkflowPayload{}
 		}
 	}
 
@@ -254,7 +290,7 @@ func isValidRunningHubWorkflows(workflows []RunningHubWorkflowPayload) bool {
 
 func isValidRunningHubOutputType(outputType string) bool {
 	switch outputType {
-	case "image", "video", "auto":
+	case "image", "video", "audio", "auto":
 		return true
 	default:
 		return false
@@ -272,7 +308,7 @@ func isValidRunningHubInstanceType(instanceType string) bool {
 
 func isValidRunningHubParamRole(role string) bool {
 	switch role {
-	case "prompt", "image", "video", "boolean", "number", "string", "fixed", "ignore":
+	case "prompt", "image", "video", "audio", "boolean", "number", "string", "fixed", "ignore":
 		return true
 	default:
 		return false

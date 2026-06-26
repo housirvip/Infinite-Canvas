@@ -14,52 +14,92 @@ type PendingImportRow = ParsedCurlNode & { role: RunningHubParamRole; label: str
 
 export function RunningHubConfigModal() {
     const [editingWorkflow, setEditingWorkflow] = useState<RunningHubWorkflow | null>(null);
+    const [editingTarget, setEditingTarget] = useState<"app" | "comfyui">("app");
+    const [workflowTab, setWorkflowTab] = useState<"app" | "comfyui">("app");
     const [apiKeyDraft, setApiKeyDraft] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
     const isOpen = useRunningHubStore((state) => state.isOpen);
     const setOpen = useRunningHubStore((state) => state.setOpen);
     const workflows = useRunningHubStore((state) => state.workflows);
+    const comfyuiWorkflows = useRunningHubStore((state) => state.comfyuiWorkflows);
     const hasApiKey = useRunningHubStore((state) => state.hasApiKey);
     const baseUrl = useRunningHubStore((state) => state.baseUrl);
     const saveConfig = useRunningHubStore((state) => state.saveConfig);
     const setWorkflows = useRunningHubStore((state) => state.setWorkflows);
+    const setComfyuiWorkflows = useRunningHubStore((state) => state.setComfyuiWorkflows);
     const fetchConfigFromServer = useRunningHubStore((state) => state.fetchConfigFromServer);
 
+    const activeWorkflows = workflowTab === "app" ? workflows : comfyuiWorkflows;
+
     const updateWorkflows = async (nextWorkflows: RunningHubWorkflow[]) => {
-        setWorkflows(nextWorkflows);
-        try {
-            await saveConfig({ workflows: nextWorkflows });
-            return true;
-        } catch {
-            message.error("工作流保存失败");
-            await fetchConfigFromServer();
-            return false;
+        if (workflowTab === "app") {
+            setWorkflows(nextWorkflows);
+            try {
+                await saveConfig({ workflows: nextWorkflows });
+                return true;
+            } catch {
+                message.error("工作流保存失败");
+                await fetchConfigFromServer();
+                return false;
+            }
+        } else {
+            setComfyuiWorkflows(nextWorkflows);
+            try {
+                await saveConfig({ comfyuiWorkflows: nextWorkflows });
+                return true;
+            } catch {
+                message.error("工作流保存失败");
+                await fetchConfigFromServer();
+                return false;
+            }
         }
     };
 
     const addWorkflow = () => {
+        setEditingTarget(workflowTab);
         setEditingWorkflow(createRunningHubWorkflow());
     };
 
     const deleteWorkflow = async (id: string) => {
-        const ok = await updateWorkflows(workflows.filter((workflow) => workflow.id !== id));
+        const ok = await updateWorkflows(activeWorkflows.filter((workflow) => workflow.id !== id));
         if (ok) {
             message.success("工作流已删除");
         }
     };
 
     const saveWorkflow = async (workflow: RunningHubWorkflow) => {
-        const exists = workflows.some((item) => item.id === workflow.id);
-        const nextWorkflows = exists ? workflows.map((item) => (item.id === workflow.id ? workflow : item)) : [...workflows, workflow];
-        const ok = await updateWorkflows(nextWorkflows);
-        if (ok) {
-            setEditingWorkflow(null);
-            message.success(exists ? "工作流已更新" : "工作流已添加");
+        const targetList = editingTarget === "app" ? workflows : comfyuiWorkflows;
+        const exists = targetList.some((item) => item.id === workflow.id);
+        const nextWorkflows = exists ? targetList.map((item) => (item.id === workflow.id ? workflow : item)) : [...targetList, workflow];
+        const prevTab = workflowTab;
+        setWorkflowTab(editingTarget);
+        if (editingTarget === "app") {
+            setWorkflows(nextWorkflows);
+            try {
+                await saveConfig({ workflows: nextWorkflows });
+                setEditingWorkflow(null);
+                message.success(exists ? "工作流已更新" : "工作流已添加");
+            } catch {
+                message.error("工作流保存失败");
+                await fetchConfigFromServer();
+                setWorkflowTab(prevTab);
+            }
+        } else {
+            setComfyuiWorkflows(nextWorkflows);
+            try {
+                await saveConfig({ comfyuiWorkflows: nextWorkflows });
+                setEditingWorkflow(null);
+                message.success(exists ? "工作流已更新" : "工作流已添加");
+            } catch {
+                message.error("工作流保存失败");
+                await fetchConfigFromServer();
+                setWorkflowTab(prevTab);
+            }
         }
     };
 
     const handleExport = () => {
-        const data = { runninghubWorkflows: workflows };
+        const data = { runninghubWorkflows: activeWorkflows };
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -121,7 +161,7 @@ export function RunningHubConfigModal() {
                                     <div className="mt-1 text-xs text-stone-500">独立管理 RunningHub API Key 和 ComfyUI 工作流，画布 RunningHub 节点会读取这里的配置。</div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <Button variant="outline" size="sm" onClick={handleExport} disabled={!workflows.length}>
+                                    <Button variant="outline" size="sm" onClick={handleExport} disabled={!activeWorkflows.length}>
                                         <Download className="size-3.5" />
                                         导出
                                     </Button>
@@ -176,9 +216,19 @@ export function RunningHubConfigModal() {
 
                         <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                             <div className="mb-3 flex items-center justify-between">
-                                <div>
-                                    <div className="text-sm font-semibold">工作流列表</div>
-                                    <div className="mt-1 text-xs text-stone-500">每个工作流对应 RunningHub 上的一个 ComfyUI 工作流，需配置节点参数映射。</div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${workflowTab === "app" ? "bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900" : "text-stone-500 hover:text-stone-700 dark:hover:text-stone-300"}`}
+                                        onClick={() => setWorkflowTab("app")}
+                                    >
+                                        App 工作流
+                                    </button>
+                                    <button
+                                        className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${workflowTab === "comfyui" ? "bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900" : "text-stone-500 hover:text-stone-700 dark:hover:text-stone-300"}`}
+                                        onClick={() => setWorkflowTab("comfyui")}
+                                    >
+                                        ComfyUI 工作流
+                                    </button>
                                 </div>
                                 <Button size="sm" onClick={addWorkflow}>
                                     <Plus className="size-3.5" />
@@ -186,11 +236,17 @@ export function RunningHubConfigModal() {
                                 </Button>
                             </div>
 
-                            {workflows.length === 0 ? (
+                            <div className="mb-2 text-xs text-stone-500">
+                                {workflowTab === "app"
+                                    ? "App 工作流使用 RunningHub Webapp ID 调用已发布的 AI 应用。"
+                                    : "ComfyUI 工作流使用 RunningHub 工作流 ID 直接执行 ComfyUI 工作流。"}
+                            </div>
+
+                            {activeWorkflows.length === 0 ? (
                                 <div className="rounded-lg border border-dashed border-stone-300 py-8 text-center text-xs text-stone-400 dark:border-stone-700">暂无工作流，点击"新增"添加</div>
                             ) : (
                                 <div className="space-y-2">
-                                    {workflows.map((workflow) => {
+                                    {activeWorkflows.map((workflow) => {
                                         const promptCount = workflow.params.filter((param) => param.role === "prompt").length;
                                         const imageCount = workflow.params.filter((param) => param.role === "image").length;
                                         const videoCount = workflow.params.filter((param) => param.role === "video").length;
@@ -206,7 +262,7 @@ export function RunningHubConfigModal() {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <Button variant="outline" size="sm" onClick={() => setEditingWorkflow({ ...workflow, params: workflow.params.map((param) => ({ ...param })) })}>
+                                                    <Button variant="outline" size="sm" onClick={() => { setEditingTarget(workflowTab); setEditingWorkflow({ ...workflow, params: workflow.params.map((param) => ({ ...param })) }); }}>
                                                         <Settings2 className="size-3.5" />
                                                         编辑
                                                     </Button>
@@ -311,9 +367,9 @@ function WorkflowEditorModal({ workflow, onSave, onCancel }: { workflow: Running
         setPendingImport(null);
         setCurlText("");
         setShowCurlImport(false);
-        const counts = { prompt: 0, image: 0, video: 0, boolean: 0, number: 0, string: 0, fixed: 0, ignore: 0 };
+        const counts = { prompt: 0, image: 0, video: 0, audio: 0, boolean: 0, number: 0, string: 0, fixed: 0, ignore: 0 };
         params.forEach((param) => counts[param.role]++);
-        message.success(`已导入 ${params.length} 个参数：${counts.prompt} 提示词、${counts.image} 图片、${counts.video} 视频、${counts.boolean} 开关、${counts.number} 数字、${counts.string} 字符串、${counts.fixed} 固定`);
+        message.success(`已导入 ${params.length} 个参数：${counts.prompt} 提示词、${counts.image} 图片、${counts.video} 视频、${counts.audio} 音频、${counts.boolean} 开关、${counts.number} 数字、${counts.string} 字符串、${counts.fixed} 固定`);
     };
 
     const updateImportRow = (index: number, patch: Partial<PendingImportRow>) => {
@@ -404,6 +460,7 @@ function WorkflowEditorModal({ workflow, onSave, onCancel }: { workflow: Running
                                     <SelectContent>
                                         <SelectItem value="image">图片</SelectItem>
                                         <SelectItem value="video">视频</SelectItem>
+                                        <SelectItem value="audio">音频</SelectItem>
                                         <SelectItem value="auto">自动识别</SelectItem>
                                     </SelectContent>
                                 </Select>

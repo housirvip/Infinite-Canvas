@@ -115,7 +115,7 @@ func (p *RunningHubProvider) Execute(ctx context.Context, task *model.Task, apiK
 	execResult := &ExecuteResult{UpstreamID: taskID}
 
 	for _, r := range results {
-		if isImageOutput(r.OutputType) || isVideoOutput(r.OutputType) {
+		if isImageOutput(r.OutputType) || isVideoOutput(r.OutputType) || isAudioOutput(r.OutputType) {
 			data, err := downloadURL(ctx, r.URL, "")
 			if err != nil {
 				continue
@@ -309,6 +309,11 @@ func isVideoOutput(t string) bool {
 	return t == "mp4" || t == "mov" || t == "avi" || t == "webm"
 }
 
+func isAudioOutput(t string) bool {
+	t = strings.ToLower(t)
+	return t == "mp3" || t == "wav" || t == "ogg" || t == "flac" || t == "m4a" || t == "aac"
+}
+
 func (p *RunningHubProvider) CancelUpstreamTask(apiKey, baseURL, upstreamTaskID string) error {
 	if baseURL == "" {
 		baseURL = defaultRunningHubBaseURL
@@ -349,6 +354,18 @@ func mimeFromOutputType(t string) string {
 		return "video/quicktime"
 	case "webm":
 		return "video/webm"
+	case "mp3":
+		return "audio/mpeg"
+	case "wav":
+		return "audio/wav"
+	case "ogg":
+		return "audio/ogg"
+	case "flac":
+		return "audio/flac"
+	case "m4a":
+		return "audio/mp4"
+	case "aac":
+		return "audio/aac"
 	default:
 		return "application/octet-stream"
 	}

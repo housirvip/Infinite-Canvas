@@ -5,6 +5,7 @@ export type RunningHubConfigResponse = {
     hasApiKey: boolean;
     baseUrl: string;
     workflows: RunningHubWorkflow[];
+    comfyuiWorkflows: RunningHubWorkflow[];
     updatedAt?: string;
 };
 
@@ -12,11 +13,12 @@ export type UpdateRunningHubConfigPayload = {
     apiKey?: string;
     baseUrl?: string;
     workflows?: RunningHubWorkflow[];
+    comfyuiWorkflows?: RunningHubWorkflow[];
 };
 
 export async function getRunningHubConfig(): Promise<RunningHubConfigResponse> {
     const res = await client.get("/runninghub/config");
-    return res.data.config || { hasApiKey: false, workflows: [] };
+    return res.data.config || { hasApiKey: false, workflows: [], comfyuiWorkflows: [] };
 }
 
 export async function updateRunningHubConfig(payload: UpdateRunningHubConfigPayload): Promise<RunningHubConfigResponse> {

@@ -16,14 +16,15 @@ const (
 )
 
 type Message struct {
-	Type         MessageType    `json:"type"`
-	TaskID       string         `json:"taskId,omitempty"`
-	Status       string         `json:"status,omitempty"`
-	Progress     int            `json:"progress,omitempty"`
-	ProgressText string         `json:"progressText,omitempty"`
-	Result       any            `json:"result,omitempty"`
-	Error        string         `json:"error,omitempty"`
-	TaskIDs      []string       `json:"taskIds,omitempty"`
+	Type         MessageType `json:"type"`
+	TaskID       string      `json:"taskId,omitempty"`
+	TraceID      string      `json:"traceId,omitempty"`
+	Status       string      `json:"status,omitempty"`
+	Progress     int         `json:"progress,omitempty"`
+	ProgressText string      `json:"progressText,omitempty"`
+	Result       any         `json:"result,omitempty"`
+	Error        string      `json:"error,omitempty"`
+	TaskIDs      []string    `json:"taskIds,omitempty"`
 }
 
 func (m *Message) JSON() []byte {

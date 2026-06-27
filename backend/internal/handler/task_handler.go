@@ -44,7 +44,7 @@ func (h *TaskHandler) Create(c *gin.Context) {
 
 	paramsJSON, _ := json.Marshal(req.Params)
 
-	task, err := h.scheduler.CreateTask(userID, taskType, providerName,
+	task, err := h.scheduler.CreateTask(c.Request.Context(), userID, taskType, providerName,
 		req.ChannelID, req.Model, req.Prompt, string(paramsJSON))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task"})

@@ -1,11 +1,12 @@
 package ws
 
 import (
-	"log"
+	"context"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/infinite-canvas/backend/internal/observability"
 )
 
 const (
@@ -106,19 +107,21 @@ func (h *Hub) Run() {
 			h.clients[client.userID][client] = struct{}{}
 			count := len(h.clients[client.userID])
 			h.mu.Unlock()
-			log.Printf("ws: registered client (user=%d, total=%d)", client.userID, count)
+			observability.Info(context.Background(), "ws client registered", "userId", client.userID, "clientCount", count)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
+			count := 0
 			if userClients, ok := h.clients[client.userID]; ok {
 				delete(userClients, client)
 				close(client.send)
-				if len(userClients) == 0 {
+				count = len(userClients)
+				if count == 0 {
 					delete(h.clients, client.userID)
 				}
 			}
 			h.mu.Unlock()
-			log.Printf("ws: unregistered client (user=%d)", client.userID)
+			observability.Info(context.Background(), "ws client unregistered", "userId", client.userID, "clientCount", count)
 		}
 	}
 }
@@ -137,7 +140,8 @@ func (h *Hub) SendToUser(userID uint, msg *Message) {
 		select {
 		case client.send <- data:
 		default:
-			log.Printf("ws: dropping message for slow client (user=%d)", userID)
+			ctx := observability.ContextWithTraceID(context.Background(), msg.TraceID)
+			observability.Warn(ctx, "ws slow client dropped message", "userId", userID, "taskId", msg.TaskID, "messageType", msg.Type)
 		}
 	}
 }

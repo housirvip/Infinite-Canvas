@@ -178,6 +178,7 @@ func (p *RunningHubComfyUIProvider) submitTask(ctx context.Context, apiKey, base
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

@@ -151,6 +151,7 @@ func (p *OpenAIImageProvider) doImageGeneration(ctx context.Context, apiKey, bas
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -253,6 +254,7 @@ func (p *OpenAIImageProvider) doImageEdit(ctx context.Context, apiKey, baseURL s
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", w.FormDataContentType())
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -302,6 +304,7 @@ func downloadURL(ctx context.Context, url, authHeader string) ([]byte, error) {
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
+	ApplyTraceHeader(ctx, req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err

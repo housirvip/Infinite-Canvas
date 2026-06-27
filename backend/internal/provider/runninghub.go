@@ -164,6 +164,7 @@ func (p *RunningHubProvider) uploadMedia(ctx context.Context, apiKey string, bas
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", w.FormDataContentType())
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -206,6 +207,7 @@ func (p *RunningHubProvider) submitTask(ctx context.Context, apiKey, baseURL, wo
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -268,6 +270,7 @@ func (p *RunningHubProvider) pollTask(ctx context.Context, apiKey, baseURL, task
 			baseURL+"/openapi/v2/query", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		req.Header.Set("Content-Type", "application/json")
+		ApplyTraceHeader(ctx, req)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -314,7 +317,7 @@ func isAudioOutput(t string) bool {
 	return t == "mp3" || t == "wav" || t == "ogg" || t == "flac" || t == "m4a" || t == "aac"
 }
 
-func (p *RunningHubProvider) CancelUpstreamTask(apiKey, baseURL, upstreamTaskID string) error {
+func (p *RunningHubProvider) CancelUpstreamTask(ctx context.Context, apiKey, baseURL, upstreamTaskID string) error {
 	if baseURL == "" {
 		baseURL = defaultRunningHubBaseURL
 	}
@@ -322,13 +325,14 @@ func (p *RunningHubProvider) CancelUpstreamTask(apiKey, baseURL, upstreamTaskID 
 		"apiKey": apiKey,
 		"taskId": upstreamTaskID,
 	})
-	req, err := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		baseURL+"/task/openapi/cancel", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -337,4 +341,3 @@ func (p *RunningHubProvider) CancelUpstreamTask(apiKey, baseURL, upstreamTaskID 
 	resp.Body.Close()
 	return nil
 }
-

@@ -68,6 +68,7 @@ func (p *AudioProvider) Execute(ctx context.Context, task *model.Task, apiKey st
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

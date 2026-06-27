@@ -202,6 +202,7 @@ func (p *ComfyUIProvider) uploadImage(ctx context.Context, apiKey, baseURL strin
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
@@ -242,6 +243,7 @@ func (p *ComfyUIProvider) submitPrompt(ctx context.Context, apiKey, baseURL stri
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
@@ -253,7 +255,7 @@ func (p *ComfyUIProvider) submitPrompt(ctx context.Context, apiKey, baseURL stri
 
 	if resp.StatusCode != http.StatusOK {
 		var errResp struct {
-			Error  string `json:"error"`
+			Error      string         `json:"error"`
 			NodeErrors map[string]any `json:"node_errors"`
 		}
 		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
@@ -316,6 +318,7 @@ func (p *ComfyUIProvider) pollHistory(ctx context.Context, baseURL, apiKey, prom
 		if apiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+apiKey)
 		}
+		ApplyTraceHeader(ctx, req)
 
 		resp, err := providerHTTPClient.Do(req)
 		if err != nil {
@@ -372,6 +375,7 @@ func (p *ComfyUIProvider) downloadOutput(ctx context.Context, baseURL, apiKey, f
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
@@ -547,6 +551,7 @@ func (p *ComfyUIProvider) fetchObjectInfo(ctx context.Context, apiKey, baseURL s
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
@@ -573,6 +578,7 @@ func (p *ComfyUIProvider) CancelPrompt(ctx context.Context, apiKey, baseURL, pro
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+	ApplyTraceHeader(ctx, req)
 	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
 		return err

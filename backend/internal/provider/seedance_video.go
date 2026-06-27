@@ -148,6 +148,7 @@ func (p *SeedanceVideoProvider) submit(ctx context.Context, apiKey, baseURL stri
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -205,6 +206,7 @@ func (p *SeedanceVideoProvider) pollAndDownload(ctx context.Context, apiKey, bas
 		url := fmt.Sprintf("%s/contents/generations/tasks/%s", strings.TrimSuffix(baseURL, "/"), taskID)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
+		ApplyTraceHeader(ctx, req)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

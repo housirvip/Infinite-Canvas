@@ -7,10 +7,12 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"net/http"
 
 	_ "golang.org/x/image/webp"
 
 	"github.com/infinite-canvas/backend/internal/model"
+	"github.com/infinite-canvas/backend/internal/observability"
 	"github.com/infinite-canvas/backend/internal/storage"
 )
 
@@ -30,6 +32,17 @@ func ImageDimensions(data []byte) (width, height int) {
 		return 0, 0
 	}
 	return cfg.Width, cfg.Height
+}
+
+func ApplyTraceHeader(ctx context.Context, req *http.Request) {
+	if req == nil {
+		return
+	}
+	traceID := observability.TraceIDFromContext(ctx)
+	if traceID == "" {
+		return
+	}
+	req.Header.Set(observability.HeaderTraceID, traceID)
 }
 
 type ExecuteResult struct {

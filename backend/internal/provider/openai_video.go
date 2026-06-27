@@ -125,6 +125,7 @@ func (p *OpenAIVideoProvider) submitVideo(ctx context.Context, apiKey, baseURL s
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", w.FormDataContentType())
+	ApplyTraceHeader(ctx, req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -181,6 +182,7 @@ func (p *OpenAIVideoProvider) pollAndDownload(ctx context.Context, apiKey, baseU
 		url := fmt.Sprintf("%s/videos/%s", strings.TrimSuffix(baseURL, "/"), taskID)
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
+		ApplyTraceHeader(ctx, req)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

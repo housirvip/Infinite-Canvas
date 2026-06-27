@@ -36,6 +36,36 @@ type imageGenParams struct {
 	MaskFileID   string   `json:"maskFileId,omitempty"`
 }
 
+type imageAPIResponse struct {
+	Data []struct {
+		B64JSON string `json:"b64_json"`
+		URL     string `json:"url"`
+	} `json:"data"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func formatImageAPIError(status string, respBody []byte, apiMessage string) error {
+	detail := strings.TrimSpace(apiMessage)
+	if detail == "" {
+		detail = compactResponseBody(respBody)
+	}
+	if detail == "" {
+		return fmt.Errorf("image API request failed (%s)", status)
+	}
+	return fmt.Errorf("image API request failed (%s): %s", status, detail)
+}
+
+func compactResponseBody(body []byte) string {
+	text := strings.Join(strings.Fields(strings.TrimSpace(string(body))), " ")
+	const maxLen = 300
+	if len(text) > maxLen {
+		return text[:maxLen] + "..."
+	}
+	return text
+}
+
 func (p *OpenAIImageProvider) Execute(ctx context.Context, task *model.Task, apiKey string, baseURL string,
 	fileStore storage.FileStorage, onProgress ProgressFunc) (*ExecuteResult, error) {
 
@@ -46,6 +76,12 @@ func (p *OpenAIImageProvider) Execute(ctx context.Context, task *model.Task, api
 
 	if params.N <= 0 {
 		params.N = 1
+	}
+	if params.Model == "" {
+		params.Model = task.Model
+	}
+	if params.Prompt == "" {
+		params.Prompt = task.Prompt
 	}
 
 	onProgress(10, "提交图片生成请求...")
@@ -124,22 +160,22 @@ func (p *OpenAIImageProvider) doImageGeneration(ctx context.Context, apiKey, bas
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	var result struct {
-		Data []struct {
-			B64JSON string `json:"b64_json"`
-			URL     string `json:"url"`
-		} `json:"data"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
+	var result imageAPIResponse
 
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %s", string(respBody))
+	parseErr := json.Unmarshal(respBody, &result)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		apiMessage := ""
+		if parseErr == nil && result.Error != nil {
+			apiMessage = result.Error.Message
+		}
+		return nil, formatImageAPIError(resp.Status, respBody, apiMessage)
+	}
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse response (%s): %s", resp.Status, compactResponseBody(respBody))
 	}
 
 	if result.Error != nil {
-		return nil, fmt.Errorf("API error: %s", result.Error.Message)
+		return nil, formatImageAPIError(resp.Status, respBody, result.Error.Message)
 	}
 
 	var images [][]byte
@@ -226,22 +262,22 @@ func (p *OpenAIImageProvider) doImageEdit(ctx context.Context, apiKey, baseURL s
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	var result struct {
-		Data []struct {
-			B64JSON string `json:"b64_json"`
-			URL     string `json:"url"`
-		} `json:"data"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
+	var result imageAPIResponse
 
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %s", string(respBody))
+	parseErr := json.Unmarshal(respBody, &result)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		apiMessage := ""
+		if parseErr == nil && result.Error != nil {
+			apiMessage = result.Error.Message
+		}
+		return nil, formatImageAPIError(resp.Status, respBody, apiMessage)
+	}
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse response (%s): %s", resp.Status, compactResponseBody(respBody))
 	}
 
 	if result.Error != nil {
-		return nil, fmt.Errorf("API error: %s", result.Error.Message)
+		return nil, formatImageAPIError(resp.Status, respBody, result.Error.Message)
 	}
 
 	var images [][]byte

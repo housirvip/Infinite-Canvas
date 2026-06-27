@@ -20,18 +20,19 @@ const (
 type TaskType string
 
 const (
-	TaskTypeImageGeneration TaskType = "image_generation"
-	TaskTypeImageEdit       TaskType = "image_edit"
-	TaskTypeVideoGeneration TaskType = "video_generation"
-	TaskTypeAudioGeneration TaskType = "audio_generation"
-	TaskTypeRunningHub      TaskType = "runninghub"
-	TaskTypeComfyUI         TaskType = "comfyui"
+	TaskTypeImageGeneration   TaskType = "image_generation"
+	TaskTypeImageEdit         TaskType = "image_edit"
+	TaskTypeVideoGeneration   TaskType = "video_generation"
+	TaskTypeAudioGeneration   TaskType = "audio_generation"
+	TaskTypeRunningHub        TaskType = "runninghub"
+	TaskTypeComfyUI           TaskType = "comfyui"
 	TaskTypeRunningHubComfyUI TaskType = "runninghub_comfyui"
 )
 
 type Task struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
 	TaskID         string         `gorm:"uniqueIndex;size:32;not null" json:"taskId"`
+	TraceID        string         `gorm:"size:128;index" json:"traceId,omitempty"`
 	UserID         uint           `gorm:"index;not null" json:"userId"`
 	Type           TaskType       `gorm:"size:32;not null" json:"type"`
 	Provider       string         `gorm:"size:32;not null;index" json:"provider"`

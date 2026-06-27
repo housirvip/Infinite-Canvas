@@ -7,10 +7,10 @@ import (
 
 	"github.com/infinite-canvas/backend/internal/config"
 	"github.com/infinite-canvas/backend/internal/model"
+	"github.com/infinite-canvas/backend/internal/observability"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 func Open(cfg *config.DatabaseConfig, logLevel string) (*gorm.DB, error) {
@@ -28,13 +28,8 @@ func Open(cfg *config.DatabaseConfig, logLevel string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("unsupported database driver: %s", cfg.Driver)
 	}
 
-	gormLogLevel := logger.Warn
-	if logLevel == "debug" {
-		gormLogLevel = logger.Info
-	}
-
 	db, err := gorm.Open(dialector, &gorm.Config{
-		Logger: logger.Default.LogMode(gormLogLevel),
+		Logger: observability.NewGormLogger(logLevel),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)

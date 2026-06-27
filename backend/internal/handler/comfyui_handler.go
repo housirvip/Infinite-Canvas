@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -87,6 +88,11 @@ func (h *ComfyUIHandler) UpdateConfig(c *gin.Context) {
 
 	if req.Presets != nil && !isValidComfyUIPresets(*req.Presets) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ComfyUI preset"})
+		return
+	}
+
+	if req.ServerURL != nil && !isValidComfyUIServerURL(strings.TrimSpace(*req.ServerURL)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid server URL: must be http or https with a valid host"})
 		return
 	}
 
@@ -263,4 +269,18 @@ func isValidComfyUIOutputType(outputType string) bool {
 	default:
 		return false
 	}
+}
+
+func isValidComfyUIServerURL(rawURL string) bool {
+	if rawURL == "" {
+		return true
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	return u.Host != ""
 }

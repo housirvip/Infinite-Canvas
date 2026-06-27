@@ -119,7 +119,7 @@ func (p *RunningHubComfyUIProvider) Execute(ctx context.Context, task *model.Tas
 				continue
 			}
 
-			mimeType := mimeFromOutputType(r.OutputType)
+			mimeType := mimeForExt(r.OutputType)
 			fID, _ := gonanoid.New(21)
 			url, err := fileStore.Save(ctx, fID, data, mimeType)
 			if err != nil {

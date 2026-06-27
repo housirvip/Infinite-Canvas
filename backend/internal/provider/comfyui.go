@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"github.com/infinite-canvas/backend/internal/model"
 	"github.com/infinite-canvas/backend/internal/storage"
 )
+
+var providerHTTPClient = &http.Client{Timeout: 120 * time.Second}
 
 type ComfyUIProvider struct {
 	pollMs   int
@@ -200,7 +203,7 @@ func (p *ComfyUIProvider) uploadImage(ctx context.Context, apiKey, baseURL strin
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to ComfyUI: %w", err)
 	}
@@ -240,7 +243,7 @@ func (p *ComfyUIProvider) submitPrompt(ctx context.Context, apiKey, baseURL stri
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to ComfyUI server: %w", err)
 	}
@@ -314,7 +317,7 @@ func (p *ComfyUIProvider) pollHistory(ctx context.Context, baseURL, apiKey, prom
 			req.Header.Set("Authorization", "Bearer "+apiKey)
 		}
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := providerHTTPClient.Do(req)
 		if err != nil {
 			continue
 		}
@@ -370,7 +373,7 @@ func (p *ComfyUIProvider) downloadOutput(ctx context.Context, baseURL, apiKey, f
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -380,51 +383,17 @@ func (p *ComfyUIProvider) downloadOutput(ctx context.Context, baseURL, apiKey, f
 		return nil, "", fmt.Errorf("download failed (status %d)", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return nil, "", err
 	}
 
 	mimeType := resp.Header.Get("Content-Type")
 	if mimeType == "" || mimeType == "application/octet-stream" {
-		mimeType = mimeFromExtension(filename)
+		mimeType = mimeForExt(filename)
 	}
 
 	return data, mimeType, nil
-}
-
-func mimeFromExtension(filename string) string {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".webp":
-		return "image/webp"
-	case ".gif":
-		return "image/gif"
-	case ".mp4":
-		return "video/mp4"
-	case ".mov":
-		return "video/quicktime"
-	case ".webm":
-		return "video/webm"
-	case ".mp3":
-		return "audio/mpeg"
-	case ".wav":
-		return "audio/wav"
-	case ".ogg":
-		return "audio/ogg"
-	case ".flac":
-		return "audio/flac"
-	case ".m4a":
-		return "audio/mp4"
-	case ".aac":
-		return "audio/aac"
-	default:
-		return "image/png"
-	}
 }
 
 func hasWidgetKeys(workflow map[string]any) bool {
@@ -480,13 +449,15 @@ func (p *ComfyUIProvider) resolveWidgetKeys(ctx context.Context, apiKey, baseURL
 				continue
 			}
 			idxStr := strings.TrimPrefix(key, "widget_")
-			idx := 0
-			for i, c := range idxStr {
-				_ = i
-				idx = idx*10 + int(c-'0')
+			idx, err := strconv.Atoi(idxStr)
+			if err != nil {
+				resolved[key] = value
+				continue
 			}
-			if idx < len(inputOrder) {
+			if idx >= 0 && idx < len(inputOrder) {
 				resolved[inputOrder[idx]] = value
+			} else {
+				resolved[key] = value
 			}
 		}
 		node["inputs"] = resolved
@@ -496,45 +467,76 @@ func (p *ComfyUIProvider) resolveWidgetKeys(ctx context.Context, apiKey, baseURL
 
 type objectInfoEntry struct {
 	Input struct {
-		Required map[string]any `json:"required"`
-		Optional map[string]any `json:"optional"`
+		Required json.RawMessage `json:"required"`
+		Optional json.RawMessage `json:"optional"`
 	} `json:"input"`
 }
 
 func (e *objectInfoEntry) inputOrder() []string {
 	var names []string
-	for name, spec := range e.Input.Required {
-		specArr, ok := spec.([]any)
-		if !ok || len(specArr) == 0 {
-			continue
-		}
-		firstStr, ok := specArr[0].(string)
-		if ok && isComfyUIDataType(firstStr) {
-			continue
-		}
-		names = append(names, name)
-	}
-	for name, spec := range e.Input.Optional {
-		specArr, ok := spec.([]any)
-		if !ok || len(specArr) == 0 {
-			continue
-		}
-		firstStr, ok := specArr[0].(string)
-		if ok && isComfyUIDataType(firstStr) {
-			continue
-		}
-		names = append(names, name)
-	}
+	names = append(names, orderedKeysFiltered(e.Input.Required)...)
+	names = append(names, orderedKeysFiltered(e.Input.Optional)...)
 	return names
+}
+
+func orderedKeysFiltered(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	t, err := dec.Token()
+	if err != nil || t != json.Delim('{') {
+		return nil
+	}
+	var keys []string
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		key, ok := tok.(string)
+		if !ok {
+			break
+		}
+		var specArr []any
+		if err := dec.Decode(&specArr); err != nil {
+			break
+		}
+		if len(specArr) == 0 {
+			continue
+		}
+		firstStr, ok := specArr[0].(string)
+		if ok && isComfyUIDataType(firstStr) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func isComfyUIDataType(t string) bool {
 	switch t {
-	case "MODEL", "CLIP", "VAE", "CONDITIONING", "LATENT", "IMAGE", "MASK", "CONTROL_NET", "STYLE_MODEL", "GLIGEN", "UPSCALE_MODEL", "SIGMAS", "NOISE", "GUIDER", "SAMPLER":
+	case "STRING", "INT", "FLOAT", "BOOLEAN", "COMBO":
+		return false
+	case "MODEL", "CLIP", "VAE", "CONDITIONING", "LATENT", "IMAGE",
+		"MASK", "CONTROL_NET", "STYLE_MODEL", "GLIGEN",
+		"UPSCALE_MODEL", "SIGMAS", "NOISE", "GUIDER", "SAMPLER":
 		return true
 	default:
+		return isAllCapsIdentifier(t)
+	}
+}
+
+func isAllCapsIdentifier(s string) bool {
+	if len(s) == 0 || s[0] < 'A' || s[0] > 'Z' {
 		return false
 	}
+	for _, c := range s {
+		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *ComfyUIProvider) fetchObjectInfo(ctx context.Context, apiKey, baseURL string) (map[string]*objectInfoEntry, error) {
@@ -546,16 +548,35 @@ func (p *ComfyUIProvider) fetchObjectInfo(ctx context.Context, apiKey, baseURL s
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := providerHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch object_info: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	var result map[string]*objectInfoEntry
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse object_info: %w", err)
 	}
 	return result, nil
+}
+
+func (p *ComfyUIProvider) CancelPrompt(ctx context.Context, apiKey, baseURL, promptID string) error {
+	body := map[string]any{"delete": []string{promptID}}
+	jsonData, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/queue", bytes.NewReader(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := providerHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }

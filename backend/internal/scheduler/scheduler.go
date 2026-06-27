@@ -104,19 +104,37 @@ func (s *Scheduler) Cancel(taskID string) error {
 		Status: string(model.TaskStatusCancelled),
 	})
 
-	if task.Provider == "runninghub" && task.UpstreamTaskID != "" {
-		go func() {
-			apiKey, baseURL, err := s.resolveChannel(&task)
-			if err != nil {
-				log.Printf("scheduler: cancel upstream: resolve channel failed: %v", err)
-				return
-			}
-			if rh, ok := s.providers["runninghub"].(*provider.RunningHubProvider); ok {
-				if err := rh.CancelUpstreamTask(apiKey, baseURL, task.UpstreamTaskID); err != nil {
-					log.Printf("scheduler: cancel upstream task %s failed: %v", task.UpstreamTaskID, err)
+	if task.UpstreamTaskID != "" {
+		switch task.Provider {
+		case "runninghub", "runninghub_comfyui":
+			go func() {
+				apiKey, baseURL, err := s.resolveChannel(&task)
+				if err != nil {
+					log.Printf("scheduler: cancel upstream: resolve channel failed: %v", err)
+					return
 				}
-			}
-		}()
+				if rh, ok := s.providers["runninghub"].(*provider.RunningHubProvider); ok {
+					if err := rh.CancelUpstreamTask(apiKey, baseURL, task.UpstreamTaskID); err != nil {
+						log.Printf("scheduler: cancel upstream task %s failed: %v", task.UpstreamTaskID, err)
+					}
+				}
+			}()
+		case "comfyui":
+			go func() {
+				apiKey, baseURL, err := s.resolveChannel(&task)
+				if err != nil {
+					log.Printf("scheduler: cancel upstream: resolve channel failed: %v", err)
+					return
+				}
+				if cp, ok := s.providers["comfyui"].(*provider.ComfyUIProvider); ok {
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					if err := cp.CancelPrompt(ctx, apiKey, baseURL, task.UpstreamTaskID); err != nil {
+						log.Printf("scheduler: cancel ComfyUI prompt %s failed: %v", task.UpstreamTaskID, err)
+					}
+				}
+			}()
+		}
 	}
 
 	var rtMs int64

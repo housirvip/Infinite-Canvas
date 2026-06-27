@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -35,12 +36,12 @@ func NewOpenAIVideoProvider(pollMs, timeoutS int) *OpenAIVideoProvider {
 func (p *OpenAIVideoProvider) Name() string { return "openai_video" }
 
 type videoGenParams struct {
-	Model          string   `json:"model"`
-	Prompt         string   `json:"prompt"`
-	Seconds        int      `json:"seconds"`
-	Size           string   `json:"size,omitempty"`
-	Resolution     string   `json:"resolution,omitempty"`
-	RefFileIDs     []string `json:"refFileIds,omitempty"`
+	Model      string   `json:"model"`
+	Prompt     string   `json:"prompt"`
+	Seconds    int      `json:"seconds"`
+	Size       string   `json:"size,omitempty"`
+	Resolution string   `json:"resolution,omitempty"`
+	RefFileIDs []string `json:"refFileIds,omitempty"`
 }
 
 func (p *OpenAIVideoProvider) Execute(ctx context.Context, task *model.Task, apiKey string, baseURL string,
@@ -208,7 +209,7 @@ func (p *OpenAIVideoProvider) pollAndDownload(ctx context.Context, apiKey, baseU
 			if status.Error != nil {
 				msg = status.Error.Message
 			}
-			return nil, fmt.Errorf(msg)
+			return nil, errors.New(msg)
 		}
 	}
 

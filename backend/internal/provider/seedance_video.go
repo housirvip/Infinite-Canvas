@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -238,7 +239,7 @@ func (p *SeedanceVideoProvider) pollAndDownload(ctx context.Context, apiKey, bas
 			if status.Error != nil {
 				msg = status.Error.Message
 			}
-			return nil, fmt.Errorf(msg)
+			return nil, errors.New(msg)
 		}
 	}
 

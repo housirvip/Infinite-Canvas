@@ -72,8 +72,6 @@ export type CanvasNodeMetadata = {
     // ComfyUI (self-hosted)
     comfyuiWorkflowSource?: "upstream" | "preset";
     comfyuiPresetId?: string;
-    comfyuiWorkflowJson?: string;
-    comfyuiPromptId?: string;
     comfyuiTimeout?: number;
     comfyuiLastError?: string;
     comfyuiParamValues?: Record<string, string>;

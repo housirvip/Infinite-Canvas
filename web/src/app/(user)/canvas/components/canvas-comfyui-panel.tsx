@@ -11,16 +11,7 @@ import { COMFYUI_TIMEOUT_OPTIONS, comfyuiParamKey } from "@/lib/comfyui";
 import { useComfyUIStore } from "@/stores/use-comfyui-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata } from "../types";
-
-export type UpstreamNode = { id: string; title: string; type: CanvasNodeType; content?: string };
-
-function upstreamLabel(node: UpstreamNode, index: number): string {
-    if (node.type === CanvasNodeType.Text) return `文本${index + 1}`;
-    if (node.type === CanvasNodeType.Image) return `图片${index + 1}`;
-    if (node.type === CanvasNodeType.Video) return `视频${index + 1}`;
-    if (node.type === CanvasNodeType.Audio) return `音频${index + 1}`;
-    return node.title || node.id.slice(0, 8);
-}
+import { type UpstreamNode, upstreamLabel } from "../utils/upstream-label";
 
 type ComfyUIPanelProps = {
     node: CanvasNodeData;
@@ -39,7 +30,7 @@ export function CanvasComfyUIPanel({ node, isRunning, upstreamNodes, onConfigCha
     const openComfyUIDialog = useComfyUIStore((state) => state.openDialog);
     const workflowSource = node.metadata?.comfyuiWorkflowSource || "preset";
     const selectedPresetId = node.metadata?.comfyuiPresetId || "";
-    const timeout = node.metadata?.comfyuiTimeout || 600;
+    const timeout = node.metadata?.comfyuiTimeout ?? 600;
     const preset = presets.find((p) => p.id === selectedPresetId);
     const paramValues = node.metadata?.comfyuiParamValues || {};
 

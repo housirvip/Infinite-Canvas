@@ -13,16 +13,7 @@ import { useRunningHubStore } from "@/stores/use-runninghub-store";
 import { useComfyUIStore } from "@/stores/use-comfyui-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata } from "../types";
-
-export type UpstreamNode = { id: string; title: string; type: CanvasNodeType; content?: string };
-
-function upstreamLabel(node: UpstreamNode, index: number): string {
-    if (node.type === CanvasNodeType.Text) return `文本${index + 1}`;
-    if (node.type === CanvasNodeType.Image) return `图片${index + 1}`;
-    if (node.type === CanvasNodeType.Video) return `视频${index + 1}`;
-    if (node.type === CanvasNodeType.Audio) return `音频${index + 1}`;
-    return node.title || node.id.slice(0, 8);
-}
+import { type UpstreamNode, upstreamLabel } from "../utils/upstream-label";
 
 type RunningHubPanelProps = {
     node: CanvasNodeData;
@@ -49,7 +40,7 @@ export function CanvasRunningHubPanel({ node, isRunning, hasTaskId, upstreamNode
     const selectedPresetId = node.metadata?.rhPresetId || "";
     const workflowSource = node.metadata?.rhWorkflowSource || "preset";
     const instanceType = node.metadata?.rhInstanceType || "default";
-    const timeout = node.metadata?.rhTimeout || 600;
+    const timeout = node.metadata?.rhTimeout ?? 600;
     const paramValues = node.metadata?.rhParamValues || {};
 
     const appWorkflow = appWorkflows.find((w) => w.id === selectedWorkflowId);

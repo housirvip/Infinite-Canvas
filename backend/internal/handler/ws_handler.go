@@ -1,12 +1,12 @@
 package handler
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/infinite-canvas/backend/internal/auth"
+	"github.com/infinite-canvas/backend/internal/observability"
 	"github.com/infinite-canvas/backend/internal/ws"
 )
 
@@ -26,25 +26,25 @@ func NewWSHandler(hub *ws.Hub, jwtMgr *auth.JWTManager) *WSHandler {
 func (h *WSHandler) Handle(c *gin.Context) {
 	token := c.Query("token")
 	if token == "" {
-		log.Printf("ws: rejected connection - missing token (ip=%s)", c.ClientIP())
+		observability.Warn(c.Request.Context(), "ws rejected connection", "reason", "missingToken", "clientIp", c.ClientIP())
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
 		return
 	}
 
 	claims, err := h.jwtMgr.ValidateToken(token)
 	if err != nil {
-		log.Printf("ws: rejected connection - invalid token (ip=%s)", c.ClientIP())
+		observability.Warn(c.Request.Context(), "ws rejected connection", "reason", "invalidToken", "clientIp", c.ClientIP())
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return
 	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("ws: upgrade failed (user=%d, ip=%s, err=%v)", claims.UserID, c.ClientIP(), err)
+		observability.Error(c.Request.Context(), "ws upgrade failed", "userId", claims.UserID, "clientIp", c.ClientIP(), "error", err)
 		return
 	}
 
-	log.Printf("ws: connected (user=%d, ip=%s)", claims.UserID, c.ClientIP())
+	observability.Info(c.Request.Context(), "ws connected", "userId", claims.UserID, "clientIp", c.ClientIP())
 
 	client := ws.NewClient(h.hub, conn, claims.UserID)
 	h.hub.Register(client)

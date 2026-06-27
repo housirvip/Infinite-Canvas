@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/infinite-canvas/backend/internal/crypto"
 	"github.com/infinite-canvas/backend/internal/middleware"
 	"github.com/infinite-canvas/backend/internal/model"
+	"github.com/infinite-canvas/backend/internal/observability"
 	"gorm.io/gorm"
 )
 
@@ -105,10 +107,14 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 	default:
 		upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+	if traceID := observability.TraceIDFromContext(c.Request.Context()); traceID != "" {
+		upstreamReq.Header.Set(observability.HeaderTraceID, traceID)
+	}
 
 	resp, err := http.DefaultClient.Do(upstreamReq)
 	if err != nil {
-		h.recordChatAudit(userID, modelName, &channel, apiFormat, http.StatusBadGateway, time.Since(startTime), c.ClientIP())
+		observability.Error(c.Request.Context(), "chat upstream request failed", "userId", userID, "model", modelName, "channelId", channel.ID, "apiFormat", apiFormat, "statusCode", http.StatusBadGateway, "error", err)
+		h.recordChatAudit(c.Request.Context(), userID, modelName, &channel, apiFormat, http.StatusBadGateway, time.Since(startTime), c.ClientIP())
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream request failed"})
 		return
 	}
@@ -133,11 +139,12 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 		}
 	}
 
-	h.recordChatAudit(userID, modelName, &channel, apiFormat, resp.StatusCode, ttfb, c.ClientIP())
+	h.recordChatAudit(c.Request.Context(), userID, modelName, &channel, apiFormat, resp.StatusCode, ttfb, c.ClientIP())
+	observability.Info(c.Request.Context(), "chat stream completed", "userId", userID, "model", modelName, "channelId", channel.ID, "apiFormat", apiFormat, "statusCode", resp.StatusCode, "ttfbMs", ttfb.Milliseconds())
 }
 
-func (h *ChatHandler) recordChatAudit(userID uint, modelName string, channel *model.ApiChannel, apiFormat string, statusCode int, ttfb time.Duration, ip string) {
-	writeAuditLog(h.db, &model.AuditLog{
+func (h *ChatHandler) recordChatAudit(ctx context.Context, userID uint, modelName string, channel *model.ApiChannel, apiFormat string, statusCode int, ttfb time.Duration, ip string) {
+	writeAuditLog(ctx, h.db, &model.AuditLog{
 		UserID:         userID,
 		Action:         "chat_stream",
 		Resource:       "chat",

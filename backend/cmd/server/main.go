@@ -17,6 +17,7 @@ import (
 	"github.com/infinite-canvas/backend/internal/database"
 	"github.com/infinite-canvas/backend/internal/handler"
 	"github.com/infinite-canvas/backend/internal/middleware"
+	"github.com/infinite-canvas/backend/internal/observability"
 	"github.com/infinite-canvas/backend/internal/scheduler"
 	"github.com/infinite-canvas/backend/internal/storage"
 	"github.com/infinite-canvas/backend/internal/ws"
@@ -33,6 +34,8 @@ func main() {
 	if err := cfg.ValidateStartup(); err != nil {
 		log.Fatalf("invalid startup config: %v", err)
 	}
+
+	observability.Configure(cfg.Log.Level)
 
 	aesCrypto, err := crypto.NewAES(cfg.Encryption.MasterKey)
 	if err != nil {
@@ -61,8 +64,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := gin.Default()
-	r.Use(middleware.CORS(cfg.Server.CORS.AllowOrigins))
+	r := gin.New()
+	r.Use(gin.Recovery(), observability.TraceMiddleware(), middleware.CORS(cfg.Server.CORS.AllowOrigins))
 
 	api := r.Group("/api/v1")
 
@@ -158,12 +161,12 @@ func main() {
 	adminGroup.PUT("/users/:id", adminHandler.UpdateUser)
 
 	if staticDir := resolveFrontendDistDir(); staticDir != "" {
-		log.Printf("serving frontend from %s", staticDir)
+		observability.Info(context.Background(), "serving frontend", "distDir", staticDir)
 		registerFrontendRoutes(r, staticDir)
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("starting server on %s (db=%s)", addr, cfg.Database.Driver)
+	observability.Info(context.Background(), "starting server", "addr", addr, "dbDriver", cfg.Database.Driver)
 
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("server error: %v", err)

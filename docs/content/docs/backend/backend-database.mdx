@@ -39,6 +39,7 @@ RunningHub 独立配置表。
 后端异步任务表。图片、视频、音频和 RunningHub 任务都会写入该表，由调度器执行并通过 WebSocket 推送状态。
 
 - `task_id`：对外任务 ID。
+- `trace_id` / `traceId`：来源请求的追踪 ID，用于关联日志、WebSocket 进度、上游调用和审计记录。
 - `user_id`：所属用户。
 - `type`：任务类型，例如 `image_generation`、`video_generation`、`audio_generation`、`runninghub`。
 - `provider`：任务提供方。
@@ -46,6 +47,17 @@ RunningHub 独立配置表。
 - `params`：任务参数 JSON。
 - `result_data`：任务结果 JSON。
 - `file_ids`：任务产物文件 ID 列表。
+
+## `audit_logs`
+
+后端审计日志表。记录登录、渠道调用、任务执行等操作，便于按追踪链路排查问题。
+
+- `trace_id` / `traceId`：关联本次请求或任务链路的追踪 ID。
+- `action`：操作类型。
+- `resource`：操作资源类型。
+- `resource_id`：资源标识。
+- `status_code`：操作对应的状态码。
+- `response_time_ms`：请求或处理耗时（毫秒）。
 
 ## `canvas_projects`
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/infinite-canvas/backend/internal/observability"
 )
 
 type ProxyHandler struct{}
@@ -56,6 +57,9 @@ func (h *ProxyHandler) WebDAVProxy(c *gin.Context) {
 		if v := c.GetHeader(from); v != "" {
 			req.Header.Set(to, v)
 		}
+	}
+	if traceID := observability.TraceIDFromContext(c.Request.Context()); traceID != "" {
+		req.Header.Set(observability.HeaderTraceID, traceID)
 	}
 
 	client := &http.Client{

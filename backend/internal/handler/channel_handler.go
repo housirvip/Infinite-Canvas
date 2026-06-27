@@ -12,6 +12,7 @@ import (
 	"github.com/infinite-canvas/backend/internal/crypto"
 	"github.com/infinite-canvas/backend/internal/middleware"
 	"github.com/infinite-canvas/backend/internal/model"
+	"github.com/infinite-canvas/backend/internal/observability"
 	"gorm.io/gorm"
 )
 
@@ -122,7 +123,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		return
 	}
 
-	writeAuditLog(h.db, &model.AuditLog{
+	writeAuditLog(c.Request.Context(), h.db, &model.AuditLog{
 		UserID:     userID,
 		Action:     "channel.create",
 		Resource:   "channel",
@@ -194,7 +195,7 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		return
 	}
 
-	writeAuditLog(h.db, &model.AuditLog{
+	writeAuditLog(c.Request.Context(), h.db, &model.AuditLog{
 		UserID:     userID,
 		Action:     "channel.update",
 		Resource:   "channel",
@@ -226,7 +227,7 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	writeAuditLog(h.db, &model.AuditLog{
+	writeAuditLog(c.Request.Context(), h.db, &model.AuditLog{
 		UserID:     userID,
 		Action:     "channel.delete",
 		Resource:   "channel",
@@ -303,6 +304,9 @@ func (h *ChannelHandler) ListModels(c *gin.Context) {
 			return
 		}
 		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	if traceID := observability.TraceIDFromContext(c.Request.Context()); traceID != "" {
+		req.Header.Set(observability.HeaderTraceID, traceID)
 	}
 
 	resp, err := http.DefaultClient.Do(req)

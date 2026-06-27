@@ -83,7 +83,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		"tokens": tokens,
 	})
 
-	writeAuditLog(h.db, &model.AuditLog{
+	writeAuditLog(c.Request.Context(), h.db, &model.AuditLog{
 		UserID:   user.ID,
 		Username: user.Username,
 		Action:   "user.register",
@@ -101,7 +101,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	var user model.User
 	if err := h.db.Where("username = ?", req.Username).First(&user).Error; err != nil {
-		writeAuditLog(h.db, &model.AuditLog{
+		writeAuditLog(c.Request.Context(), h.db, &model.AuditLog{
 			Username: req.Username,
 			Action:   "user.login_failed",
 			Resource: "user",
@@ -113,7 +113,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if !auth.CheckPassword(user.PasswordHash, req.Password) {
-		writeAuditLog(h.db, &model.AuditLog{
+		writeAuditLog(c.Request.Context(), h.db, &model.AuditLog{
 			UserID:   user.ID,
 			Username: user.Username,
 			Action:   "user.login_failed",
@@ -136,7 +136,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"tokens": tokens,
 	})
 
-	writeAuditLog(h.db, &model.AuditLog{
+	writeAuditLog(c.Request.Context(), h.db, &model.AuditLog{
 		UserID:   user.ID,
 		Username: user.Username,
 		Action:   "user.login",

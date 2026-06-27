@@ -1,16 +1,28 @@
 package handler
 
 import (
-	"log"
+	"context"
 
 	"github.com/infinite-canvas/backend/internal/model"
+	"github.com/infinite-canvas/backend/internal/observability"
 	"gorm.io/gorm"
 )
 
-func writeAuditLog(db *gorm.DB, entry *model.AuditLog) {
+func writeAuditLog(ctx context.Context, db *gorm.DB, entry *model.AuditLog) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if entry.TraceID == "" {
+		entry.TraceID = observability.TraceIDFromContext(ctx)
+	}
 	go func() {
-		if err := db.Create(entry).Error; err != nil {
-			log.Printf("failed to write audit log: %v", err)
+		if err := db.WithContext(ctx).Create(entry).Error; err != nil {
+			observability.Error(ctx, "audit log write failed",
+				"action", entry.Action,
+				"resource", entry.Resource,
+				"resourceId", entry.ResourceID,
+				"error", err,
+			)
 		}
 	}()
 }

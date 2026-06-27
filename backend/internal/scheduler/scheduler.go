@@ -68,26 +68,35 @@ func New(db *gorm.DB, hub *ws.Hub, fileStore storage.FileStorage,
 }
 
 func (s *Scheduler) Start(ctx context.Context) {
+	log.Printf("scheduler: starting")
 	s.recoverTasks()
 	go s.run(ctx)
+	log.Printf("scheduler: started")
 }
 
 func (s *Scheduler) Enqueue(taskID string) {
 	select {
 	case s.notifyChan <- struct{}{}:
+		log.Printf("scheduler: enqueue notified task_id=%s", taskID)
 	default:
+		log.Printf("scheduler: enqueue notify skipped task_id=%s reason=notify_pending", taskID)
 	}
 }
 
 func (s *Scheduler) Cancel(taskID string) error {
+	cancelledRunning := false
 	if cancel, ok := s.cancelMap.Load(taskID); ok {
+		cancelledRunning = true
 		cancel.(context.CancelFunc)()
 	}
+	log.Printf("scheduler: cancel requested task_id=%s running=%t", taskID, cancelledRunning)
 
 	var task model.Task
 	if err := s.db.Where("task_id = ?", taskID).First(&task).Error; err != nil {
+		log.Printf("scheduler: cancel load failed task_id=%s error=%v", taskID, err)
 		return err
 	}
+	log.Printf("scheduler: cancelling task %s status=%s upstream_task_id=%s", taskLogContext(&task), task.Status, task.UpstreamTaskID)
 
 	completedAt := time.Now()
 	if err := s.db.Model(&model.Task{}).Where("task_id = ?", taskID).
@@ -95,6 +104,7 @@ func (s *Scheduler) Cancel(taskID string) error {
 			"status":       model.TaskStatusCancelled,
 			"completed_at": completedAt,
 		}).Error; err != nil {
+		log.Printf("scheduler: cancel persist failed %s error=%v", taskLogContext(&task), err)
 		return err
 	}
 
@@ -107,40 +117,42 @@ func (s *Scheduler) Cancel(taskID string) error {
 	if task.UpstreamTaskID != "" {
 		switch task.Provider {
 		case "runninghub", "runninghub_comfyui":
-			go func() {
+			go func(task model.Task) {
 				apiKey, baseURL, err := s.resolveChannel(&task)
 				if err != nil {
-					log.Printf("scheduler: cancel upstream: resolve channel failed: %v", err)
+					log.Printf("scheduler: cancel upstream resolve channel failed %s upstream_task_id=%s error=%v", taskLogContext(&task), task.UpstreamTaskID, err)
 					return
 				}
 				if rh, ok := s.providers["runninghub"].(*provider.RunningHubProvider); ok {
 					if err := rh.CancelUpstreamTask(apiKey, baseURL, task.UpstreamTaskID); err != nil {
-						log.Printf("scheduler: cancel upstream task %s failed: %v", task.UpstreamTaskID, err)
+						log.Printf("scheduler: cancel upstream failed %s upstream_task_id=%s error=%v", taskLogContext(&task), task.UpstreamTaskID, err)
+						return
 					}
+					log.Printf("scheduler: cancel upstream completed %s upstream_task_id=%s", taskLogContext(&task), task.UpstreamTaskID)
 				}
-			}()
+			}(task)
 		case "comfyui":
-			go func() {
+			go func(task model.Task) {
 				apiKey, baseURL, err := s.resolveChannel(&task)
 				if err != nil {
-					log.Printf("scheduler: cancel upstream: resolve channel failed: %v", err)
+					log.Printf("scheduler: cancel upstream resolve channel failed %s upstream_task_id=%s error=%v", taskLogContext(&task), task.UpstreamTaskID, err)
 					return
 				}
 				if cp, ok := s.providers["comfyui"].(*provider.ComfyUIProvider); ok {
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
 					if err := cp.CancelPrompt(ctx, apiKey, baseURL, task.UpstreamTaskID); err != nil {
-						log.Printf("scheduler: cancel ComfyUI prompt %s failed: %v", task.UpstreamTaskID, err)
+						log.Printf("scheduler: cancel ComfyUI prompt failed %s upstream_task_id=%s error=%v", taskLogContext(&task), task.UpstreamTaskID, err)
+						return
 					}
+					log.Printf("scheduler: cancel ComfyUI prompt completed %s upstream_task_id=%s", taskLogContext(&task), task.UpstreamTaskID)
 				}
-			}()
+			}(task)
 		}
 	}
 
-	var rtMs int64
-	if task.StartedAt != nil {
-		rtMs = completedAt.Sub(*task.StartedAt).Milliseconds()
-	}
+	rtMs := taskRuntimeMs(&task, completedAt)
+	log.Printf("scheduler: task cancelled %s runtime_ms=%d", taskLogContext(&task), rtMs)
 	s.writeAuditLog(&task, "task.cancelled", rtMs, nil)
 
 	return nil
@@ -164,8 +176,10 @@ func (s *Scheduler) CreateTask(userID uint, taskType model.TaskType, providerNam
 	}
 
 	if err := s.db.Create(task).Error; err != nil {
+		log.Printf("scheduler: task create failed task_id=%s user_id=%d type=%s provider=%s model=%q channel_id=%d error=%v", taskID, userID, taskType, providerName, modelName, channelID, err)
 		return nil, err
 	}
+	log.Printf("scheduler: task created %s", taskLogContext(task))
 
 	s.Enqueue(taskID)
 
@@ -196,10 +210,17 @@ func (s *Scheduler) run(ctx context.Context) {
 
 func (s *Scheduler) pollAndDispatch(ctx context.Context) {
 	var tasks []model.Task
-	s.db.Where("status = ?", model.TaskStatusPending).
+	result := s.db.Where("status = ?", model.TaskStatusPending).
 		Order("created_at ASC").
 		Limit(50).
 		Find(&tasks)
+	if result.Error != nil {
+		log.Printf("scheduler: poll pending tasks failed error=%v", result.Error)
+		return
+	}
+	if len(tasks) > 0 {
+		log.Printf("scheduler: polled pending tasks count=%d", len(tasks))
+	}
 
 	for i := range tasks {
 		if ctx.Err() != nil {
@@ -209,6 +230,7 @@ func (s *Scheduler) pollAndDispatch(ctx context.Context) {
 
 		_, ok := s.providers[task.Provider]
 		if !ok {
+			log.Printf("scheduler: task rejected %s reason=unknown_provider", taskLogContext(task))
 			s.failTask(task, "unknown provider: "+task.Provider)
 			continue
 		}
@@ -219,10 +241,17 @@ func (s *Scheduler) pollAndDispatch(ctx context.Context) {
 			result := s.db.Model(&model.Task{}).
 				Where("task_id = ? AND status = ?", task.TaskID, model.TaskStatusPending).
 				Update("status", model.TaskStatusQueued)
-			if result.RowsAffected == 0 {
+			if result.Error != nil {
 				<-sem
+				log.Printf("scheduler: task queue transition failed %s error=%v", taskLogContext(task), result.Error)
 				continue
 			}
+			if result.RowsAffected == 0 {
+				<-sem
+				log.Printf("scheduler: task queue transition skipped %s reason=status_changed", taskLogContext(task))
+				continue
+			}
+			log.Printf("scheduler: task queued %s in_flight=%d concurrency=%d", taskLogContext(task), len(sem), cap(sem))
 			s.hub.SendToUser(task.UserID, &ws.Message{
 				Type:         ws.MsgTypeTaskStatus,
 				TaskID:       task.TaskID,
@@ -231,6 +260,7 @@ func (s *Scheduler) pollAndDispatch(ctx context.Context) {
 			})
 			go s.dispatch(ctx, task, sem)
 		default:
+			log.Printf("scheduler: provider busy %s in_flight=%d concurrency=%d", taskLogContext(task), len(sem), cap(sem))
 		}
 	}
 }
@@ -247,10 +277,13 @@ func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem ch
 
 	now := time.Now()
 	task.StartedAt = &now
-	s.db.Model(task).Updates(map[string]any{
+	if err := s.db.Model(task).Updates(map[string]any{
 		"status":     model.TaskStatusRunning,
 		"started_at": now,
-	})
+	}).Error; err != nil {
+		log.Printf("scheduler: task running transition failed %s error=%v", taskLogContext(task), err)
+	}
+	log.Printf("scheduler: task running %s", taskLogContext(task))
 
 	s.hub.SendToUser(task.UserID, &ws.Message{
 		Type:         ws.MsgTypeTaskStatus,
@@ -262,9 +295,11 @@ func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem ch
 
 	apiKey, baseURL, err := s.resolveChannel(task)
 	if err != nil {
+		log.Printf("scheduler: channel resolve failed %s error=%v", taskLogContext(task), err)
 		s.failTask(task, err.Error())
 		return
 	}
+	log.Printf("scheduler: channel resolved %s has_base_url=%t", taskLogContext(task), baseURL != "")
 
 	onProgress := func(progress int, text string) {
 		updates := map[string]any{
@@ -274,7 +309,10 @@ func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem ch
 		if task.UpstreamTaskID != "" {
 			updates["upstream_task_id"] = task.UpstreamTaskID
 		}
-		s.db.Model(task).Updates(updates)
+		if err := s.db.Model(task).Updates(updates).Error; err != nil {
+			log.Printf("scheduler: task progress persist failed %s progress=%d text=%q upstream_task_id=%s error=%v", taskLogContext(task), progress, text, task.UpstreamTaskID, err)
+		}
+		log.Printf("scheduler: task progress %s progress=%d text=%q upstream_task_id=%s", taskLogContext(task), progress, text, task.UpstreamTaskID)
 		s.hub.SendToUser(task.UserID, &ws.Message{
 			Type:         ws.MsgTypeTaskStatus,
 			TaskID:       task.TaskID,
@@ -285,11 +323,14 @@ func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem ch
 	}
 
 	p := s.providers[task.Provider]
+	log.Printf("scheduler: task execute started %s", taskLogContext(task))
 	result, err := p.Execute(ctx, task, apiKey, baseURL, s.fileStore, onProgress)
 	if err != nil {
 		if ctx.Err() != nil {
+			log.Printf("scheduler: task execute cancelled %s runtime_ms=%d", taskLogContext(task), time.Since(now).Milliseconds())
 			return
 		}
+		log.Printf("scheduler: task execute failed %s runtime_ms=%d error=%v", taskLogContext(task), time.Since(now).Milliseconds(), err)
 		s.failTask(task, err.Error())
 		return
 	}
@@ -302,7 +343,8 @@ func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem ch
 	fileIDsJSON, _ := json.Marshal(fileIDs)
 
 	completedAt := time.Now()
-	s.db.Model(task).Updates(map[string]any{
+	rtMs := completedAt.Sub(now).Milliseconds()
+	if err := s.db.Model(task).Updates(map[string]any{
 		"status":           model.TaskStatusSuccess,
 		"progress":         100,
 		"progress_text":    "完成",
@@ -310,7 +352,10 @@ func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem ch
 		"file_ids":         string(fileIDsJSON),
 		"upstream_task_id": result.UpstreamID,
 		"completed_at":     completedAt,
-	})
+	}).Error; err != nil {
+		log.Printf("scheduler: task success persist failed %s upstream_task_id=%s runtime_ms=%d error=%v", taskLogContext(task), result.UpstreamID, rtMs, err)
+	}
+	log.Printf("scheduler: task completed %s files=%d text_bytes=%d upstream_task_id=%s runtime_ms=%d", taskLogContext(task), len(result.Files), len(result.Text), result.UpstreamID, rtMs)
 
 	s.hub.SendToUser(task.UserID, &ws.Message{
 		Type:   ws.MsgTypeTaskCompleted,
@@ -319,16 +364,20 @@ func (s *Scheduler) dispatch(parentCtx context.Context, task *model.Task, sem ch
 		Result: result,
 	})
 
-	s.writeAuditLog(task, "task.completed", completedAt.Sub(now).Milliseconds(), nil)
+	s.writeAuditLog(task, "task.completed", rtMs, nil)
 }
 
 func (s *Scheduler) failTask(task *model.Task, errMsg string) {
 	completedAt := time.Now()
-	s.db.Model(task).Updates(map[string]any{
+	rtMs := taskRuntimeMs(task, completedAt)
+	if err := s.db.Model(task).Updates(map[string]any{
 		"status":        model.TaskStatusFailed,
 		"error_message": errMsg,
 		"completed_at":  completedAt,
-	})
+	}).Error; err != nil {
+		log.Printf("scheduler: task failure persist failed %s runtime_ms=%d original_error=%q persist_error=%v", taskLogContext(task), rtMs, errMsg, err)
+	}
+	log.Printf("scheduler: task failed %s runtime_ms=%d error=%q", taskLogContext(task), rtMs, errMsg)
 
 	s.hub.SendToUser(task.UserID, &ws.Message{
 		Type:   ws.MsgTypeTaskFailed,
@@ -337,10 +386,6 @@ func (s *Scheduler) failTask(task *model.Task, errMsg string) {
 		Error:  errMsg,
 	})
 
-	var rtMs int64
-	if task.StartedAt != nil {
-		rtMs = completedAt.Sub(*task.StartedAt).Milliseconds()
-	}
 	s.writeAuditLog(task, "task.failed", rtMs, map[string]string{"error": errMsg})
 }
 
@@ -402,9 +447,25 @@ func (s *Scheduler) recoverTasks() {
 	result := s.db.Model(&model.Task{}).
 		Where("status IN ?", []model.TaskStatus{model.TaskStatusRunning, model.TaskStatusQueued}).
 		Update("status", model.TaskStatusPending)
-	if result.RowsAffected > 0 {
-		log.Printf("scheduler: recovered %d tasks", result.RowsAffected)
+	if result.Error != nil {
+		log.Printf("scheduler: recover tasks failed error=%v", result.Error)
+		return
 	}
+	log.Printf("scheduler: recovered tasks count=%d", result.RowsAffected)
+}
+
+func taskLogContext(task *model.Task) string {
+	if task == nil {
+		return "task_id=<nil>"
+	}
+	return fmt.Sprintf("task_id=%s user_id=%d type=%s provider=%s model=%q channel_id=%d", task.TaskID, task.UserID, task.Type, task.Provider, task.Model, task.ChannelID)
+}
+
+func taskRuntimeMs(task *model.Task, at time.Time) int64 {
+	if task == nil || task.StartedAt == nil {
+		return 0
+	}
+	return at.Sub(*task.StartedAt).Milliseconds()
 }
 
 func (s *Scheduler) writeAuditLog(task *model.Task, action string, responseTimeMs int64, detail any) {
@@ -428,7 +489,7 @@ func (s *Scheduler) writeAuditLog(task *model.Task, action string, responseTimeM
 		detailJSON = string(data)
 	}
 
-	s.db.Create(&model.AuditLog{
+	if err := s.db.Create(&model.AuditLog{
 		UserID:         task.UserID,
 		Username:       username,
 		Action:         action,
@@ -439,5 +500,7 @@ func (s *Scheduler) writeAuditLog(task *model.Task, action string, responseTimeM
 		ChannelName:    channelName,
 		ResponseTimeMs: responseTimeMs,
 		Detail:         detailJSON,
-	})
+	}).Error; err != nil {
+		log.Printf("scheduler: audit log write failed %s action=%s error=%v", taskLogContext(task), action, err)
+	}
 }

@@ -2581,30 +2581,23 @@ function InfiniteCanvasPage() {
                     const mediaFileIds: Record<string, string> = {};
                     const images: Record<string, string> = {};
                     const videos: Record<string, string> = {};
+                    const audios: Record<string, string> = {};
                     for (const [key, blob] of mediaBlobs) {
                         const uploaded = await uploadFile(blob, "media.bin");
                         mediaFileIds[key] = uploaded.fileId;
                         if (imageMapping.has(key)) images[key] = "__media__";
                         else if (videoMapping.has(key)) videos[key] = "__media__";
+                        else if (audioMapping.has(key)) audios[key] = "__media__";
                     }
 
-                    const values: RunningHubParamValues = { texts, images, videos, booleans };
+                    const values: RunningHubParamValues = { texts, images, videos, audios, booleans };
                     const nodeInfoList = buildNodeInfoList(workflow, values);
                     const result = await submitTaskAndWait(
                         () => submitRunningHubTask({ workflowId: workflow.workflowId, nodeInfoList, mediaFileIds }),
                         abortController.signal,
                         (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "runninghub" }),
                     );
-                    const rhResults = result.files.map((f) => ({
-                        type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
-                        id: nanoid(),
-                        url: fileUrl(f.fileId),
-                        storageKey: f.fileId,
-                        width: f.width,
-                        height: f.height,
-                        bytes: f.size,
-                        mimeType: f.mimeType,
-                    }));
+                    const rhResults = mapTaskResultFiles(result.files);
                     createRunningHubOutputNodes(nodeId, rhResults);
                     setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, rhStatus: undefined, rhTaskId: undefined } } : n)));
                 } catch (error) {
@@ -2618,7 +2611,7 @@ function InfiniteCanvasPage() {
                 // --- ComfyUI mode (RHC) ---
                 const workflowSource = metadata.rhWorkflowSource || "preset";
                 const instanceType = metadata.rhInstanceType || "default";
-                const timeout = metadata.rhTimeout || 600;
+                const timeout = metadata.rhTimeout ?? 600;
 
                 const rhHasApiKey = useRunningHubStore.getState().hasApiKey;
                 const openRHDialog = useRunningHubStore.getState().openDialog;
@@ -2656,16 +2649,7 @@ function InfiniteCanvasPage() {
                             abortController.signal,
                             (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "runninghub_comfyui" }),
                         );
-                        const outputResults = result.files.map((f) => ({
-                            type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
-                            id: nanoid(),
-                            url: fileUrl(f.fileId),
-                            storageKey: f.fileId,
-                            width: f.width,
-                            height: f.height,
-                            bytes: f.size,
-                            mimeType: f.mimeType,
-                        }));
+                        const outputResults = mapTaskResultFiles(result.files);
                         createRunningHubOutputNodes(nodeId, outputResults);
                         setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, rhLastError: undefined } } : n)));
                     } catch (error) {
@@ -2739,17 +2723,17 @@ function InfiniteCanvasPage() {
 
                             if (imageParamsSorted.length) {
                                 const upstreamImageItems = await collectUpstreamImageBlobs(nodeId, nodesRef.current, connectionsRef.current);
-                                const imageMapping = resolveUpstreamMapping(imageParamsSorted as any, stored, upstreamImageItems);
+                                const imageMapping = resolveUpstreamMapping(imageParamsSorted, stored, upstreamImageItems);
                                 for (const [key, blob] of imageMapping) mediaBlobs.set(key, blob);
                             }
                             if (videoParamsSorted.length) {
                                 const upstreamVideoItems = await collectUpstreamVideoBlobs(nodeId, nodesRef.current, connectionsRef.current);
-                                const videoMapping = resolveUpstreamMapping(videoParamsSorted as any, stored, upstreamVideoItems);
+                                const videoMapping = resolveUpstreamMapping(videoParamsSorted, stored, upstreamVideoItems);
                                 for (const [key, blob] of videoMapping) mediaBlobs.set(key, blob);
                             }
                             if (audioParamsSorted.length) {
                                 const upstreamAudioItems = await collectUpstreamAudioBlobs(nodeId, nodesRef.current, connectionsRef.current);
-                                const audioMapping = resolveUpstreamMapping(audioParamsSorted as any, stored, upstreamAudioItems);
+                                const audioMapping = resolveUpstreamMapping(audioParamsSorted, stored, upstreamAudioItems);
                                 for (const [key, blob] of audioMapping) mediaBlobs.set(key, blob);
                             }
 
@@ -2764,16 +2748,7 @@ function InfiniteCanvasPage() {
                             abortController.signal,
                             (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "runninghub_comfyui" }),
                         );
-                        const outputResults = result.files.map((f) => ({
-                            type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
-                            id: nanoid(),
-                            url: fileUrl(f.fileId),
-                            storageKey: f.fileId,
-                            width: f.width,
-                            height: f.height,
-                            bytes: f.size,
-                            mimeType: f.mimeType,
-                        }));
+                        const outputResults = mapTaskResultFiles(result.files);
                         createRunningHubOutputNodes(nodeId, outputResults);
                         setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, rhLastError: undefined } } : n)));
                     } catch (error) {
@@ -2810,16 +2785,7 @@ function InfiniteCanvasPage() {
                     abortController.signal,
                     (tid) => taskNodeMapRef.current.set(tid, { nodeId, type: "runninghub" }),
                 );
-                const rhResults = result.files.map((f) => ({
-                    type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
-                    id: nanoid(),
-                    url: fileUrl(f.fileId),
-                    storageKey: f.fileId,
-                    width: f.width,
-                    height: f.height,
-                    bytes: f.size,
-                    mimeType: f.mimeType,
-                }));
+                const rhResults = mapTaskResultFiles(result.files);
                 createRunningHubOutputNodes(nodeId, rhResults);
                 setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, rhStatus: undefined, rhTaskId: undefined } } : n)));
             } catch (error) {
@@ -2918,17 +2884,17 @@ function InfiniteCanvasPage() {
 
                         if (imageParamsSorted.length) {
                             const upstreamImageItems = await collectUpstreamImageBlobs(nodeId, nodesRef.current, connectionsRef.current);
-                            const imageMapping = resolveUpstreamMapping(imageParamsSorted as any, stored, upstreamImageItems);
+                            const imageMapping = resolveUpstreamMapping(imageParamsSorted, stored, upstreamImageItems);
                             for (const [key, blob] of imageMapping) mediaBlobs.set(key, blob);
                         }
                         if (videoParamsSorted.length) {
                             const upstreamVideoItems = await collectUpstreamVideoBlobs(nodeId, nodesRef.current, connectionsRef.current);
-                            const videoMapping = resolveUpstreamMapping(videoParamsSorted as any, stored, upstreamVideoItems);
+                            const videoMapping = resolveUpstreamMapping(videoParamsSorted, stored, upstreamVideoItems);
                             for (const [key, blob] of videoMapping) mediaBlobs.set(key, blob);
                         }
                         if (audioParamsSorted.length) {
                             const upstreamAudioItems = await collectUpstreamAudioBlobs(nodeId, nodesRef.current, connectionsRef.current);
-                            const audioMapping = resolveUpstreamMapping(audioParamsSorted as any, stored, upstreamAudioItems);
+                            const audioMapping = resolveUpstreamMapping(audioParamsSorted, stored, upstreamAudioItems);
                             for (const [key, blob] of audioMapping) mediaBlobs.set(key, blob);
                         }
 
@@ -2944,16 +2910,7 @@ function InfiniteCanvasPage() {
                     abortController.signal,
                     (taskId) => taskNodeMapRef.current.set(taskId, { nodeId, type: "comfyui" }),
                 );
-                const outputResults = result.files.map((f) => ({
-                    type: f.mimeType.startsWith("video/") ? "video" as const : f.mimeType.startsWith("audio/") ? "audio" as const : "image" as const,
-                    id: nanoid(),
-                    url: fileUrl(f.fileId),
-                    storageKey: f.fileId,
-                    width: f.width,
-                    height: f.height,
-                    bytes: f.size,
-                    mimeType: f.mimeType,
-                }));
+                const outputResults = mapTaskResultFiles(result.files);
                 createRunningHubOutputNodes(nodeId, outputResults);
                 setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, metadata: { ...n.metadata, status: "success" as const, comfyuiLastError: undefined } } : n)));
             } catch (error) {
@@ -4062,20 +4019,40 @@ function buildAngleLabel(params: CanvasImageAngleParams) {
     return `AI 多角度：${horizontal}，${pitch}，镜头距离 ${params.cameraDistance.toFixed(1)}，${params.wideAngle ? "广角" : "标准"}镜头`;
 }
 
+function mapTaskResultFiles(files: Array<{ fileId: string; mimeType: string; size: number; width?: number; height?: number }>) {
+    return files.map((f) => ({
+        type: f.mimeType.startsWith("video/") ? ("video" as const) : f.mimeType.startsWith("audio/") ? ("audio" as const) : ("image" as const),
+        id: nanoid(),
+        url: fileUrl(f.fileId),
+        storageKey: f.fileId,
+        width: f.width,
+        height: f.height,
+        bytes: f.size,
+        mimeType: f.mimeType,
+    }));
+}
+
 function buildAnglePrompt(params: CanvasImageAngleParams) {
     return `基于参考图重新生成同一主体的新视角，保持主体、颜色、材质和画面风格一致，不要只做透视变形。${buildAngleLabel(params)}。`;
 }
 
-async function collectUpstreamImageBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): Promise<Array<{ nodeId: string; value: Blob }>> {
+async function collectUpstreamMediaBlobs(
+    nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[],
+    nodeType: CanvasNodeType, fetchBlob: (storageKey: string) => Promise<Blob | null>,
+): Promise<Array<{ nodeId: string; value: Blob }>> {
     const upstreamNodeIds = connections.filter((c) => c.toNodeId === nodeId).map((c) => c.fromNodeId);
-    const imageNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id) && n.type === CanvasNodeType.Image && n.metadata?.storageKey);
+    const mediaNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id) && n.type === nodeType && n.metadata?.storageKey);
     const items: Array<{ nodeId: string; value: Blob }> = [];
-    for (const node of imageNodes) {
+    for (const node of mediaNodes) {
         if (!node.metadata?.storageKey) continue;
-        const blob = await getImageBlob(node.metadata.storageKey);
+        const blob = await fetchBlob(node.metadata.storageKey);
         if (blob) items.push({ nodeId: node.id, value: blob });
     }
     return items;
+}
+
+async function collectUpstreamImageBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return collectUpstreamMediaBlobs(nodeId, nodes, connections, CanvasNodeType.Image, getImageBlob);
 }
 
 function collectUpstreamTexts(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): Array<{ nodeId: string; value: string }> {
@@ -4085,32 +4062,16 @@ function collectUpstreamTexts(nodeId: string, nodes: CanvasNodeData[], connectio
         .map((n) => ({ nodeId: n.id, value: n.metadata!.content! }));
 }
 
-async function collectUpstreamVideoBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): Promise<Array<{ nodeId: string; value: Blob }>> {
-    const upstreamNodeIds = connections.filter((c) => c.toNodeId === nodeId).map((c) => c.fromNodeId);
-    const videoNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id) && n.type === CanvasNodeType.Video && n.metadata?.storageKey);
-    const items: Array<{ nodeId: string; value: Blob }> = [];
-    for (const node of videoNodes) {
-        if (!node.metadata?.storageKey) continue;
-        const blob = await getMediaBlob(node.metadata.storageKey);
-        if (blob) items.push({ nodeId: node.id, value: blob });
-    }
-    return items;
+async function collectUpstreamVideoBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return collectUpstreamMediaBlobs(nodeId, nodes, connections, CanvasNodeType.Video, getMediaBlob);
 }
 
-async function collectUpstreamAudioBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): Promise<Array<{ nodeId: string; value: Blob }>> {
-    const upstreamNodeIds = connections.filter((c) => c.toNodeId === nodeId).map((c) => c.fromNodeId);
-    const audioNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id) && n.type === CanvasNodeType.Audio && n.metadata?.storageKey);
-    const items: Array<{ nodeId: string; value: Blob }> = [];
-    for (const node of audioNodes) {
-        if (!node.metadata?.storageKey) continue;
-        const blob = await getMediaBlob(node.metadata.storageKey);
-        if (blob) items.push({ nodeId: node.id, value: blob });
-    }
-    return items;
+async function collectUpstreamAudioBlobs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return collectUpstreamMediaBlobs(nodeId, nodes, connections, CanvasNodeType.Audio, getMediaBlob);
 }
 
 function resolveUpstreamMapping<T>(
-    params: import("@/lib/runninghub").RunningHubParam[],
+    params: Array<{ nodeId: string; fieldName: string }>,
     stored: Record<string, string>,
     upstreamItems: Array<{ nodeId: string; value: T }>,
 ): Map<string, T> {

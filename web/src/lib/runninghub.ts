@@ -19,6 +19,7 @@ export type RunningHubParamValues = {
     texts: Record<string, string>;
     images: Record<string, string>;
     videos: Record<string, string>;
+    audios: Record<string, string>;
     booleans: Record<string, string>;
 };
 
@@ -140,6 +141,9 @@ export function buildNodeInfoList(workflow: RunningHubWorkflow, values: RunningH
             if (url) list.push({ nodeId: param.nodeId, fieldName: param.fieldName, fieldValue: url });
         } else if (param.role === "video") {
             const url = values.videos[key];
+            if (url) list.push({ nodeId: param.nodeId, fieldName: param.fieldName, fieldValue: url });
+        } else if (param.role === "audio") {
+            const url = values.audios[key];
             if (url) list.push({ nodeId: param.nodeId, fieldName: param.fieldName, fieldValue: url });
         } else if (param.role === "boolean") {
             list.push({ nodeId: param.nodeId, fieldName: param.fieldName, fieldValue: values.booleans[key] ?? param.defaultValue ?? "false" });

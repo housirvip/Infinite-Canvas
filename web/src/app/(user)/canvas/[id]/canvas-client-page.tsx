@@ -1175,7 +1175,7 @@ function InfiniteCanvasPage() {
 
     const createAndOpenProject = useCallback(async () => {
         try {
-            const id = await createProject(`无限画布 ${useCanvasStore.getState().projects.length + 1}`);
+            const id = await createProject();
             navigate(`/canvas/${id}`);
         } catch {
             message.error("新建画布失败，请稍后重试");

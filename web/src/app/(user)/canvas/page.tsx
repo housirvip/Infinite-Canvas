@@ -48,7 +48,7 @@ function CanvasPageInner() {
     };
     const createAndEnter = async () => {
         try {
-            enterProject(await createProject(`无限画布 ${projects.length + 1}`));
+            enterProject(await createProject());
         } catch {
             message.error("新建画布失败，请稍后重试");
             navigate("/canvas", { replace: true });

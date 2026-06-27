@@ -41,6 +41,14 @@ type CanvasStore = {
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 
 const TRANSIENT_NODE_FIELDS = new Set(["progress", "progressText", "taskProvider"]);
+const DEFAULT_CANVAS_TITLE_BASE = "无限画布";
+
+function getNextDefaultCanvasTitle(projects: CanvasProject[]): string {
+    const usedTitles = new Set(projects.map((project) => project.title.trim()));
+    let suffix = 1;
+    while (usedTitles.has(`${DEFAULT_CANVAS_TITLE_BASE} ${suffix}`)) suffix += 1;
+    return `${DEFAULT_CANVAS_TITLE_BASE} ${suffix}`;
+}
 
 function stripTransientFields(node: CanvasNodeData): CanvasNodeData {
     if (!node.metadata) return node;
@@ -161,12 +169,13 @@ export const useCanvasStore = create<CanvasStore>()((set, get) => ({
         }
     },
 
-    createProject: async (title = "未命名画布") => {
+    createProject: async (title) => {
         const id = nanoid();
+        const projectTitle = title ?? getNextDefaultCanvasTitle(get().projects);
         const project = toCanvasProject(
             await projectApi.createProject({
                 projectId: id,
-                title,
+                title: projectTitle,
                 backgroundMode: "lines",
             }),
         );
